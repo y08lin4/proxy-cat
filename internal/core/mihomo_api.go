@@ -29,6 +29,10 @@ type ConnectionsResponse struct {
 	Connections   []json.RawMessage `json:"connections"`
 }
 
+type DelayResponse struct {
+	Delay int `json:"delay"`
+}
+
 func NewMihomoClient(controller string, secret string, httpClient *http.Client) (*MihomoClient, error) {
 	baseURL, err := normalizeControllerURL(controller)
 	if err != nil {
@@ -69,6 +73,34 @@ func (c *MihomoClient) SelectProxy(ctx context.Context, groupName string, proxyN
 	return c.doJSON(ctx, http.MethodPut, path, body, nil)
 }
 
+func (c *MihomoClient) TestProxyDelay(ctx context.Context, proxyName string, testURL string, timeoutMS int) (*DelayResponse, error) {
+	if proxyName == "" {
+		return nil, errors.New("proxy name is required")
+	}
+	if testURL == "" {
+		testURL = "https://www.gstatic.com/generate_204"
+	}
+	if timeoutMS <= 0 {
+		timeoutMS = 5000
+	}
+
+	path := "/proxies/" + url.PathEscape(proxyName) + "/delay"
+	endpoint, err := c.endpoint(path)
+	if err != nil {
+		return nil, err
+	}
+	query := endpoint.Query()
+	query.Set("url", testURL)
+	query.Set("timeout", fmt.Sprint(timeoutMS))
+	endpoint.RawQuery = query.Encode()
+
+	var out DelayResponse
+	if err := c.doJSONURL(ctx, http.MethodGet, endpoint, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *MihomoClient) GetConnections(ctx context.Context) (*ConnectionsResponse, error) {
 	var out ConnectionsResponse
 	if err := c.doJSON(ctx, http.MethodGet, "/connections", nil, &out); err != nil {
@@ -82,6 +114,14 @@ func (c *MihomoClient) CloseConnections(ctx context.Context) error {
 }
 
 func (c *MihomoClient) doJSON(ctx context.Context, method string, path string, in any, out any) error {
+	endpoint, err := c.endpoint(path)
+	if err != nil {
+		return err
+	}
+	return c.doJSONURL(ctx, method, endpoint, in, out)
+}
+
+func (c *MihomoClient) doJSONURL(ctx context.Context, method string, endpoint *url.URL, in any, out any) error {
 	var body io.Reader
 	if in != nil {
 		payload, err := json.Marshal(in)
@@ -91,10 +131,6 @@ func (c *MihomoClient) doJSON(ctx context.Context, method string, path string, i
 		body = bytes.NewReader(payload)
 	}
 
-	endpoint, err := c.endpoint(path)
-	if err != nil {
-		return err
-	}
 	req, err := http.NewRequestWithContext(ctx, method, endpoint.String(), body)
 	if err != nil {
 		return err
@@ -108,13 +144,13 @@ func (c *MihomoClient) doJSON(ctx context.Context, method string, path string, i
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("mihomo %s %s: %w", method, path, err)
+		return fmt.Errorf("mihomo %s %s: %w", method, endpoint.EscapedPath(), err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		message, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("mihomo %s %s: status %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(message)))
+		return fmt.Errorf("mihomo %s %s: status %d: %s", method, endpoint.EscapedPath(), resp.StatusCode, strings.TrimSpace(string(message)))
 	}
 
 	if out == nil {

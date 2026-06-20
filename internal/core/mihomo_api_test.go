@@ -80,6 +80,40 @@ func TestGetProxies(t *testing.T) {
 	}
 }
 
+func TestTestProxyDelayRequest(t *testing.T) {
+	var gotPath string
+	var gotURL string
+	var gotTimeout string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		gotURL = r.URL.Query().Get("url")
+		gotTimeout = r.URL.Query().Get("timeout")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"delay":123}`))
+	}))
+	defer server.Close()
+
+	client, err := NewMihomoClient(server.URL, "", server.Client())
+	if err != nil {
+		t.Fatalf("NewMihomoClient() error = %v", err)
+	}
+
+	delay, err := client.TestProxyDelay(context.Background(), "HK 1", "https://example.test/204", 3000)
+	if err != nil {
+		t.Fatalf("TestProxyDelay() error = %v", err)
+	}
+	if delay.Delay != 123 {
+		t.Fatalf("delay = %d, want 123", delay.Delay)
+	}
+	if gotPath != "/proxies/HK%201/delay" {
+		t.Fatalf("path = %s, want escaped proxy delay path", gotPath)
+	}
+	if gotURL != "https://example.test/204" || gotTimeout != "3000" {
+		t.Fatalf("query url=%q timeout=%q", gotURL, gotTimeout)
+	}
+}
+
 func TestHTTPErrorIncludesStatus(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
