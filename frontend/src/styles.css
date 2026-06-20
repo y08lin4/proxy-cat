@@ -19,6 +19,48 @@ body {
     linear-gradient(135deg, #fff8f4 0%, #f6ece8 45%, #f2e7e3 100%);
 }
 
+.boot-error {
+  align-items: center;
+  background:
+    radial-gradient(circle at 18% 4%, rgb(255 222 213 / 0.76), transparent 34%),
+    linear-gradient(135deg, #fff8f4 0%, #f6ece8 45%, #f2e7e3 100%);
+  color: #37252b;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 32px;
+}
+
+.boot-error section {
+  background: rgb(255 250 247 / 0.88);
+  border: 1px solid rgb(112 76 65 / 0.12);
+  border-radius: 20px;
+  box-shadow: 0 24px 80px rgb(107 75 82 / 0.18);
+  max-width: 560px;
+  padding: 32px;
+}
+
+.boot-error span {
+  color: #8a4d60;
+  display: block;
+  font-size: 13px;
+  font-weight: 800;
+  margin-bottom: 12px;
+}
+
+.boot-error h1 {
+  font-size: 28px;
+  line-height: 1.2;
+  margin: 0 0 14px;
+}
+
+.boot-error p {
+  color: #775b64;
+  line-height: 1.7;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 button,
 input,
 select {

@@ -80,12 +80,14 @@ export default function App() {
         getAutoStableStatus(),
         getConnectionStatus()
       ]);
-      setStatus(nextStatus);
-      setGroups(nextGroups);
-      setLogs(nextLogs);
-      setAutoStable(nextAutoStable);
-      setConnection(nextConnection);
-      setError(nextStatus.lastError || nextAutoStable.lastError || null);
+      const normalizedStatus = normalizeAppStatus(nextStatus);
+      const normalizedAutoStable = normalizeAutoStable(nextAutoStable);
+      setStatus(normalizedStatus);
+      setGroups(normalizeGroups(nextGroups));
+      setLogs(normalizeLogs(nextLogs));
+      setAutoStable(normalizedAutoStable);
+      setConnection(normalizeConnection(nextConnection));
+      setError(normalizedStatus.lastError || normalizedAutoStable.lastError || null);
     } catch (err) {
       setError(toMessage(err));
     }
@@ -973,6 +975,67 @@ function translateLogLevel(level: string): string {
     return "追踪";
   }
   return level || "信息";
+}
+
+function normalizeAppStatus(status: AppStatus | null | undefined): AppStatus {
+  return { ...emptyStatus, ...(status ?? {}) };
+}
+
+function normalizeConnection(status: ConnectionStatus | null | undefined): ConnectionStatus {
+  return { ...emptyConnection, ...(status ?? {}) };
+}
+
+function normalizeGroups(groups: ProxyGroupView[] | null | undefined): ProxyGroupView[] {
+  return (groups ?? [])
+    .filter((group): group is ProxyGroupView => Boolean(group))
+    .map((group) => ({
+      ...group,
+      name: group.name || "未命名分组",
+      type: group.type || "select",
+      selected: group.selected || "",
+      proxies: (group.proxies ?? [])
+        .filter((proxy): proxy is ProxyGroupView["proxies"][number] => Boolean(proxy))
+        .map((proxy) => ({
+          ...proxy,
+          name: proxy.name || "未命名节点",
+          type: proxy.type || "",
+          alive: Boolean(proxy.alive)
+        }))
+    }));
+}
+
+function normalizeLogs(logs: LogLine[] | null | undefined): LogLine[] {
+  return (logs ?? [])
+    .filter((line): line is LogLine => Boolean(line))
+    .map((line) => ({
+      ...line,
+      time: line.time || "",
+      level: line.level || "info",
+      message: line.message || ""
+    }));
+}
+
+function normalizeAutoStable(status: AutoStableStatus | null | undefined): AutoStableStatus {
+  const next = { ...emptyAutoStable, ...(status ?? {}) };
+  return {
+    ...next,
+    health: (next.health ?? [])
+      .filter((group): group is AutoStableGroupHealth => Boolean(group))
+      .map((group) => ({
+        ...group,
+        name: group.name || "未命名分组",
+        type: group.type || "auto-stable",
+        selected: group.selected || "",
+        proxies: (group.proxies ?? [])
+          .filter((node): node is AutoStableNodeHealth => Boolean(node))
+          .map((node) => ({
+            ...node,
+            name: node.name || "未命名节点",
+            type: node.type || "",
+            alive: Boolean(node.alive)
+          }))
+      }))
+  };
 }
 
 function toMessage(err: unknown): string {

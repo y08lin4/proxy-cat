@@ -231,6 +231,17 @@ func hasGroupWithProxy(groups []ProxyGroupView, groupName string, proxyName stri
 	return false
 }
 
+func TestGetLogsReturnsEmptySlice(t *testing.T) {
+	a := New()
+	logs := a.GetLogs(80)
+	if logs == nil {
+		t.Fatal("GetLogs() = nil, want empty slice")
+	}
+	if len(logs) != 0 {
+		t.Fatalf("len(GetLogs()) = %d, want 0", len(logs))
+	}
+}
+
 func TestAppHelperProcess(t *testing.T) {
 	switch os.Getenv("PROXY_CAT_APP_HELPER") {
 	case "unexpected":

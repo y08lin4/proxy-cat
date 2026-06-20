@@ -347,6 +347,9 @@ func (a *App) GetLogs(limit int) []LogLine {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
+	if len(a.logs) == 0 {
+		return []LogLine{}
+	}
 	if limit <= 0 || limit >= len(a.logs) {
 		return append([]LogLine(nil), a.logs...)
 	}
