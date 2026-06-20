@@ -91,11 +91,36 @@ proxies:
 	if err != nil {
 		t.Fatalf("ParseSubscription() error = %v", err)
 	}
-	if len(prof.ProxyGroups) != 2 || prof.ProxyGroups[0].Name != "PROXY" || prof.ProxyGroups[1].Name != "AUTO" {
+	if len(prof.ProxyGroups) != 3 || prof.ProxyGroups[0].Name != "PROXY" || prof.ProxyGroups[1].Name != "AUTO" || prof.ProxyGroups[2].Name != "AUTO-STABLE" {
 		t.Fatalf("default groups = %+v", prof.ProxyGroups)
+	}
+	if prof.ProxyGroups[2].Type != "auto-stable" {
+		t.Fatalf("auto-stable default group = %+v", prof.ProxyGroups[2])
 	}
 	if len(prof.Rules) != 2 || prof.Rules[0].Type != "GEOIP" || prof.Rules[1].Type != "MATCH" {
 		t.Fatalf("default rules = %+v", prof.Rules)
+	}
+}
+
+func TestParseSubscriptionAllowsAutoStableGroup(t *testing.T) {
+	prof, err := ParseSubscription([]byte(`
+proxies:
+  - { name: HK, type: ss, server: hk.example.com, port: 8388 }
+proxy-groups:
+  - name: AUTO-STABLE
+    type: auto-stable
+    proxies:
+      - HK
+`), ParseOptions{})
+	if err != nil {
+		t.Fatalf("ParseSubscription() error = %v", err)
+	}
+	if len(prof.ProxyGroups) != 1 {
+		t.Fatalf("group count = %d", len(prof.ProxyGroups))
+	}
+	group := prof.ProxyGroups[0]
+	if group.Name != "AUTO-STABLE" || group.Type != "auto-stable" || len(group.Proxies) != 1 || group.Proxies[0] != "HK" {
+		t.Fatalf("auto-stable group = %+v", group)
 	}
 }
 

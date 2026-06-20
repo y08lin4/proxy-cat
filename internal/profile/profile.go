@@ -109,7 +109,7 @@ func DefaultSettings() Settings {
 func DefaultGroups(proxyNames []string) []ProxyGroup {
 	names := append([]string(nil), proxyNames...)
 	proxyGroupMembers := make([]string, 0, len(names)+2)
-	proxyGroupMembers = append(proxyGroupMembers, "AUTO", "DIRECT")
+	proxyGroupMembers = append(proxyGroupMembers, "AUTO-STABLE", "AUTO", "DIRECT")
 	proxyGroupMembers = append(proxyGroupMembers, names...)
 
 	return []ProxyGroup{
@@ -121,6 +121,11 @@ func DefaultGroups(proxyNames []string) []ProxyGroup {
 		{
 			Name:    "AUTO",
 			Type:    "url-test",
+			Proxies: names,
+		},
+		{
+			Name:    "AUTO-STABLE",
+			Type:    "auto-stable",
 			Proxies: names,
 		},
 	}

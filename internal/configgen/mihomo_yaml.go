@@ -110,13 +110,13 @@ func writeProxyGroup(b *bytes.Buffer, group profile.ProxyGroup) {
 	b.WriteString(quoteString(group.Name))
 	b.WriteByte('\n')
 	b.WriteString("    type: ")
-	groupType := group.Type
-	if groupType == "auto-stable" {
+	groupType := strings.TrimSpace(group.Type)
+	if strings.EqualFold(groupType, "auto-stable") {
 		groupType = "select"
 	}
 	b.WriteString(quoteString(groupType))
 	b.WriteByte('\n')
-	if group.Type == "url-test" {
+	if strings.EqualFold(strings.TrimSpace(group.Type), "url-test") {
 		b.WriteString("    url: https://www.gstatic.com/generate_204\n")
 		b.WriteString("    interval: 300\n")
 	}
