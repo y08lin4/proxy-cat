@@ -1,6 +1,5 @@
 # Build output
-/build/bin/
-/build/*.zip
+/build/
 /dist/
 /frontend/dist/*
 !/frontend/dist/.gitkeep
