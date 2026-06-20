@@ -106,7 +106,7 @@ declare global {
 function app(): WailsApp {
   const binding = window.go?.main?.App;
   if (!binding) {
-    throw new Error("Wails backend binding is not available");
+    throw new Error("Wails 后端绑定不可用");
   }
   return binding;
 }

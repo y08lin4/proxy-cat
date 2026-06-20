@@ -44,6 +44,16 @@ const emptyConnection: ConnectionStatus = {
   connectionCount: 0
 };
 
+type ViewId = "overview" | "proxies" | "auto" | "logs" | "settings";
+
+const navItems: Array<{ id: ViewId; label: string; mark: string }> = [
+  { id: "overview", label: "概览", mark: "览" },
+  { id: "proxies", label: "代理", mark: "代" },
+  { id: "auto", label: "自动选择", mark: "稳" },
+  { id: "logs", label: "日志", mark: "志" },
+  { id: "settings", label: "设置", mark: "设" }
+];
+
 export default function App() {
   const [status, setStatus] = useState<AppStatus>(emptyStatus);
   const [autoStable, setAutoStable] = useState<AutoStableStatus>(emptyAutoStable);
@@ -56,6 +66,7 @@ export default function App() {
   const [proxyView, setProxyView] = useState<"all" | "selected" | "auto">("all");
   const [logLevel, setLogLevel] = useState("all");
   const [logQuery, setLogQuery] = useState("");
+  const [activeView, setActiveView] = useState<ViewId>("overview");
   const [busy, setBusy] = useState(false);
   const [healthBusy, setHealthBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,7 +87,7 @@ export default function App() {
       setConnection(nextConnection);
       setError(nextStatus.lastError || nextAutoStable.lastError || null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(toMessage(err));
     }
   }
 
@@ -87,7 +98,7 @@ export default function App() {
       await action();
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(toMessage(err));
       await refresh();
     } finally {
       setBusy(false);
@@ -100,7 +111,7 @@ export default function App() {
     try {
       setAutoStable(await getAutoStableStatus());
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(toMessage(err));
     } finally {
       setHealthBusy(false);
     }
@@ -110,7 +121,7 @@ export default function App() {
     event.preventDefault();
     const url = subscriptionUrl.trim();
     if (!url) {
-      setError("Subscription URL is required");
+      setError("请输入订阅地址");
       return;
     }
     await run(() => loadSubscription(url));
@@ -122,12 +133,8 @@ export default function App() {
     return () => window.clearInterval(id);
   }, []);
 
-  const selectedCount = useMemo(
-    () => groups.filter((group) => group.selected).length,
-    [groups]
-  );
   const selectedNodes = useMemo(
-    () => groups.filter((group) => group.selected).map((group) => `${group.name}: ${group.selected}`),
+    () => groups.filter((group) => group.selected).map((group) => `${group.name}：${group.selected}`),
     [groups]
   );
   const autoStableGroups = useMemo(
@@ -148,8 +155,10 @@ export default function App() {
     () => filterLogs(logs, logLevel, logQuery),
     [logs, logLevel, logQuery]
   );
-  const connectionTone = connection.coreRunning ? (connection.connectionCount > 0 ? "good" : "warn") : "muted";
-  const connectionLabel = connection.coreRunning ? (connection.connectionCount > 0 ? "Connected" : "Core ready") : "Offline";
+  const activeGroup = useMemo(
+    () => groups.find((group) => group.name === autoStableGroup) || autoStableGroups[0] || groups[0],
+    [autoStableGroup, autoStableGroups, groups]
+  );
 
   useEffect(() => {
     if (autoStableGroups.length > 0 && !autoStableGroups.some((group) => group.name === autoStableGroup)) {
@@ -159,276 +168,460 @@ export default function App() {
 
   return (
     <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark">PC</div>
+      <aside className="side-rail" aria-label="主导航">
+        <div className="brand-block">
+          <div className="cat-mark">PC</div>
           <div>
             <h1>Proxy-Cat</h1>
-            <p>Mihomo client</p>
+            <p>更稳定的 Mihomo 客户端</p>
           </div>
         </div>
-        <nav className="nav-list">
-          <a className="active" href="#dashboard">Dashboard</a>
-          <a href="#proxies">Proxies</a>
-          <a href="#auto-stable">Auto-stable</a>
-          <a href="#logs">Logs</a>
-          <a href="#settings">Settings</a>
+
+        <nav className="nav-stack">
+          {navItems.map((item) => (
+            <button
+              className={activeView === item.id ? "nav-item active" : "nav-item"}
+              key={item.id}
+              onClick={() => setActiveView(item.id)}
+              type="button"
+            >
+              <span>{item.mark}</span>
+              {item.label}
+            </button>
+          ))}
         </nav>
+
+        <div className="rail-footer">
+          <span className={status.coreRunning ? "soft-pill online" : "soft-pill"}>{status.coreRunning ? "内核运行中" : "内核未启动"}</span>
+          <small>{status.controllerAddress}</small>
+        </div>
       </aside>
 
       <section className="workspace">
-        <header className="topbar" id="dashboard">
+        <header className="topbar">
           <div>
-            <p className="eyebrow">Phase 3</p>
-            <h2>Proxy control panel</h2>
+            <p>当前配置</p>
+            <h2>{status.activeProfileName || "未加载订阅"}</h2>
           </div>
-          <div className="toolbar">
-            <button disabled={busy || status.coreRunning} onClick={() => run(startCore)} title="Start core">Start</button>
-            <button disabled={busy || !status.coreRunning} onClick={() => run(stopCore)} title="Stop core">Stop</button>
-            <button disabled={busy} onClick={() => run(restartCore)} title="Restart core">Restart</button>
+          <div className="top-actions">
+            <button className="ghost-button" disabled={busy} onClick={refresh} type="button">刷新</button>
+            <button className="ghost-button" disabled={busy || !status.coreRunning} onClick={() => run(stopCore)} type="button">停止</button>
+            <button className="ghost-button" disabled={busy} onClick={() => run(restartCore)} type="button">重启</button>
+            <button className="primary-button" disabled={busy || status.coreRunning} onClick={() => run(startCore)} type="button">启动内核</button>
           </div>
         </header>
 
-        {error ? <div className="error-banner">{error}</div> : null}
+        {error ? <div className="notice error">{error}</div> : null}
 
-        <section className="status-grid">
-          <StatusCard label="Core" value={status.coreRunning ? "Running" : "Stopped"} tone={status.coreRunning ? "good" : "muted"} />
-          <StatusCard label="System proxy" value={status.systemProxyEnabled ? "On" : "Off"} tone={status.systemProxyEnabled ? "good" : "muted"} />
-          <StatusCard label="Auto-stable" value={autoStable.enabled ? "On" : "Off"} tone={autoStable.enabled ? "good" : "muted"} />
-          <StatusCard label="Profile" value={status.activeProfileName || "None"} tone={status.activeProfileName ? "good" : "muted"} />
-        </section>
+        {activeView === "overview" ? (
+          <OverviewView
+            autoStable={autoStable}
+            connection={connection}
+            groups={groups}
+            healthSummary={healthSummary}
+            logs={logs}
+            selectedNodes={selectedNodes}
+            status={status}
+          />
+        ) : null}
 
-        <section className="connection-strip" aria-label="Connection status">
-          <div className={`connection-status ${connectionTone}`}>
-            <span className="status-dot" />
-            <div>
-              <strong>{connectionLabel}</strong>
-              <span>{status.controllerAddress}</span>
-            </div>
-          </div>
-          <Metric label="Active profile" value={status.activeProfileName || "No profile"} />
-          <Metric label="Connections" value={`${connection.connectionCount}`} />
-          <Metric label="Traffic" value={`${formatBytes(connection.downloadTotal)} down / ${formatBytes(connection.uploadTotal)} up`} />
-          <Metric label="Auto-stable scan" value={autoStable.running || healthBusy ? "Running" : autoStable.lastTickAt ? formatRelativeTime(autoStable.lastTickAt) : "Idle"} />
-          <Metric label="Last action" value={autoStable.lastAction || autoStable.lastSelected || "None"} />
-        </section>
+        {activeView === "proxies" ? (
+          <ProxyViewPanel
+            busy={busy}
+            filteredGroups={filteredGroups}
+            groups={groups}
+            proxyQuery={proxyQuery}
+            proxyView={proxyView}
+            setProxyQuery={setProxyQuery}
+            setProxyView={setProxyView}
+            select={(groupName, proxyName) => run(() => selectProxy(groupName, proxyName))}
+          />
+        ) : null}
 
-        <section className="panel-row">
-          <section className="panel" id="settings">
-            <div className="panel-header">
-              <h3>Subscription</h3>
-              <span>{groups.length} groups</span>
-            </div>
-            <form className="subscription-form" onSubmit={submitSubscription}>
-              <input
-                value={subscriptionUrl}
-                onChange={(event) => setSubscriptionUrl(event.target.value)}
-                placeholder="https://example.com/subscription.yaml"
-                spellCheck={false}
-              />
-              <button disabled={busy} type="submit">Load</button>
-            </form>
-            <label className="switch-row">
-              <span>Windows system proxy</span>
-              <input
-                type="checkbox"
-                checked={status.systemProxyEnabled}
-                onChange={(event) => run(() => setSystemProxy(event.target.checked))}
-                disabled={busy}
-              />
-            </label>
-            <label className="switch-row">
-              <span>Auto-stable node selection</span>
-              <input
-                type="checkbox"
-                checked={autoStable.enabled}
-                onChange={(event) => run(() => setAutoStableEnabled(event.target.checked))}
-                disabled={busy || !autoStable.available}
-              />
-            </label>
-          </section>
+        {activeView === "auto" ? (
+          <AutoStableView
+            activeGroup={activeGroup}
+            autoStable={autoStable}
+            autoStableGroup={autoStableGroup}
+            autoStableGroups={autoStableGroups}
+            busy={busy}
+            healthBusy={healthBusy}
+            healthRows={healthRows}
+            healthSummary={healthSummary}
+            refreshHealth={refreshHealth}
+            runTick={() => run(async () => {
+              await runAutoStableTick();
+            })}
+            setAutoStableGroup={setAutoStableGroup}
+            toggle={(enabled) => run(() => setAutoStableEnabled(enabled))}
+          />
+        ) : null}
 
-          <section className="panel">
-            <div className="panel-header">
-              <h3>Connection</h3>
-              <span>{selectedCount} selected</span>
-            </div>
-            <div className="connection-list">
-              {selectedNodes.length === 0 ? (
-                <div className="empty-state compact">No selected proxy groups yet.</div>
-              ) : (
-                selectedNodes.slice(0, 4).map((item) => <span key={item}>{item}</span>)
-              )}
-              {selectedNodes.length > 4 ? <small>+{selectedNodes.length - 4} more groups</small> : null}
-            </div>
-          </section>
-        </section>
+        {activeView === "logs" ? (
+          <LogsView
+            filteredLogs={filteredLogs}
+            logLevel={logLevel}
+            logLevels={logLevels}
+            logQuery={logQuery}
+            logs={logs}
+            setLogLevel={setLogLevel}
+            setLogQuery={setLogQuery}
+          />
+        ) : null}
 
-        <section className="panel" id="auto-stable">
-          <div className="panel-header">
-            <div>
-              <h3>Auto-stable health</h3>
-              <span>{healthRows.length} nodes</span>
-            </div>
-            <div className="health-actions">
-              <select
-                value={autoStableGroup}
-                onChange={(event) => setAutoStableGroup(event.target.value)}
-                disabled={busy || autoStableGroups.length === 0}
-              >
-                {autoStableGroups.length === 0 ? (
-                  <option value="AUTO-STABLE">AUTO-STABLE</option>
-                ) : (
-                  autoStableGroups.map((group) => (
-                    <option key={group.name} value={group.name}>{group.name}</option>
-                  ))
-                )}
-              </select>
-              <button disabled={busy || healthBusy || !autoStable.available} onClick={refreshHealth} title="Refresh health">Refresh</button>
-              <button disabled={busy || healthBusy || !autoStable.available || !autoStable.enabled} onClick={() => run(async () => { await runAutoStableTick(); })} title="Run auto-stable">Tick</button>
-            </div>
-          </div>
-          <div className="scan-summary">
-            <Metric label="Best node" value={healthSummary.bestNode || "n/a"} />
-            <Metric label="Healthy" value={`${healthSummary.healthy}/${healthSummary.total}`} />
-            <Metric label="Avg latency" value={healthSummary.averageLatency ? `${healthSummary.averageLatency} ms` : "n/a"} />
-            <Metric label="Failure checks" value={`${healthSummary.failures}`} />
-          </div>
-          {healthRows.length === 0 ? (
-            <div className="empty-state">
-              {autoStable.available ? "No health samples yet." : "Load a subscription to create AUTO-STABLE."}
-            </div>
-          ) : (
-            <div className="health-table">
-              <div className="health-row health-head">
-                <span>Node</span>
-                <span>Score</span>
-                <span>Latency</span>
-                <span>Failure</span>
-                <span>Checked</span>
-              </div>
-              {healthRows.map((row) => (
-                <div className="health-row" key={`${row.groupName}-${row.node.name}`}>
-                  <strong>{row.node.name}</strong>
-                  <span>{formatScore(row.node)}</span>
-                  <span className={row.node.alive ? "cell-good" : "cell-bad"}>{formatLatency(row.node)}</span>
-                  <span>{formatFailureRate(row.node)}</span>
-                  <span>{formatRelativeTime(row.node.lastCheckedAt)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+        {activeView === "settings" ? (
+          <SettingsView
+            autoStable={autoStable}
+            busy={busy}
+            status={status}
+            subscriptionUrl={subscriptionUrl}
+            setSubscriptionUrl={setSubscriptionUrl}
+            submitSubscription={submitSubscription}
+            toggleAuto={(enabled) => run(() => setAutoStableEnabled(enabled))}
+            toggleSystemProxy={(enabled) => run(() => setSystemProxy(enabled))}
+          />
+        ) : null}
+      </section>
+    </main>
+  );
+}
 
-        <section className="panel" id="proxies">
-          <div className="panel-header">
-            <div>
-              <h3>Proxy groups</h3>
-              <span>{filteredGroups.length}/{groups.length} visible</span>
-            </div>
-            <div className="proxy-actions">
-              <input
-                value={proxyQuery}
-                onChange={(event) => setProxyQuery(event.target.value)}
-                placeholder="Search group or node"
-                spellCheck={false}
-              />
-              <select value={proxyView} onChange={(event) => setProxyView(event.target.value as "all" | "selected" | "auto")}>
-                <option value="all">All groups</option>
-                <option value="selected">Selected</option>
-                <option value="auto">Auto groups</option>
-              </select>
-              <button disabled={busy} onClick={refresh} title="Refresh status">Refresh</button>
-            </div>
-          </div>
-          {groups.length === 0 ? (
-            <div className="empty-state">Load a subscription to generate PROXY, AUTO-STABLE, and AUTO groups.</div>
-          ) : filteredGroups.length === 0 ? (
-            <div className="empty-state">No proxy groups match the current filter.</div>
-          ) : (
-            <div className="group-list">
-              {filteredGroups.map((group) => (
-                <article className="group-card" key={group.name}>
-                  <div className="group-title">
-                    <div>
-                      <h4>{group.name}</h4>
-                      <span>{group.type}</span>
-                    </div>
-                    <strong>{group.selected || "Not selected"}</strong>
-                  </div>
-                  <div className="node-list">
-                    {group.proxies.map((proxy) => (
-                      <button
-                        className={proxy.name === group.selected ? "node active" : "node"}
-                        key={proxy.name}
-                        disabled={busy}
-                        onClick={() => run(() => selectProxy(group.name, proxy.name))}
-                        title={`Select ${proxy.name}`}
-                      >
-                        <span>{proxy.name}</span>
-                        <small>
-                          {proxy.type || "group"}
-                          {typeof proxy.latencyMs === "number" && proxy.latencyMs > 0 ? ` / ${proxy.latencyMs} ms` : ""}
-                          {!proxy.alive ? " / down" : ""}
-                        </small>
-                      </button>
-                    ))}
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
+function OverviewView(props: {
+  autoStable: AutoStableStatus;
+  connection: ConnectionStatus;
+  groups: ProxyGroupView[];
+  healthSummary: ReturnType<typeof summarizeHealth>;
+  logs: LogLine[];
+  selectedNodes: string[];
+  status: AppStatus;
+}) {
+  const connectionLabel = props.connection.coreRunning
+    ? props.connection.connectionCount > 0 ? "连接活跃" : "内核就绪"
+    : "离线";
 
-        <section className="panel" id="logs">
-          <div className="panel-header">
-            <div>
-              <h3>Logs</h3>
-              <span>{filteredLogs.length}/{logs.length} lines</span>
-            </div>
-            <div className="log-controls">
-              <select value={logLevel} onChange={(event) => setLogLevel(event.target.value)}>
-                <option value="all">All levels</option>
-                {logLevels.map((level) => (
-                  <option key={level} value={level}>{level}</option>
-                ))}
-              </select>
-              <input
-                value={logQuery}
-                onChange={(event) => setLogQuery(event.target.value)}
-                placeholder="Filter logs"
-                spellCheck={false}
-              />
-              <button
-                disabled={logLevel === "all" && logQuery.length === 0}
-                onClick={() => {
-                  setLogLevel("all");
-                  setLogQuery("");
-                }}
-                title="Clear log filters"
-              >
-                Clear
-              </button>
-            </div>
-          </div>
-          <div className="log-list">
-            {logs.length === 0 ? (
-              <div className="empty-state">No logs yet.</div>
-            ) : filteredLogs.length === 0 ? (
-              <div className="empty-state">No log lines match the current filter.</div>
+  return (
+    <div className="view-stack">
+      <section className="hero-panel">
+        <div className="hero-copy">
+          <span className={props.status.coreRunning ? "state-chip good" : "state-chip"}>{connectionLabel}</span>
+          <h3>{props.status.coreRunning ? "代理服务已准备好" : "启动内核后开始代理"}</h3>
+          <p>加载订阅、开启系统代理，再让自动稳定选择帮你减少手动切换。</p>
+        </div>
+        <div className="hero-metrics">
+          <Metric label="连接数" value={`${props.connection.connectionCount}`} />
+          <Metric label="下载" value={formatBytes(props.connection.downloadTotal)} />
+          <Metric label="上传" value={formatBytes(props.connection.uploadTotal)} />
+        </div>
+      </section>
+
+      <section className="quick-grid">
+        <StatusTile label="内核" value={props.status.coreRunning ? "运行中" : "未启动"} tone={props.status.coreRunning ? "good" : "muted"} />
+        <StatusTile label="系统代理" value={props.status.systemProxyEnabled ? "已开启" : "未开启"} tone={props.status.systemProxyEnabled ? "good" : "muted"} />
+        <StatusTile label="自动选择" value={props.autoStable.enabled ? "已开启" : "未开启"} tone={props.autoStable.enabled ? "good" : "muted"} />
+        <StatusTile label="代理组" value={`${props.groups.length} 个`} tone={props.groups.length > 0 ? "good" : "muted"} />
+      </section>
+
+      <section className="dashboard-grid">
+        <article className="panel surface">
+          <PanelTitle title="当前选择" meta={`${props.selectedNodes.length} 个分组`} />
+          <div className="selected-list">
+            {props.selectedNodes.length === 0 ? (
+              <EmptyState text="还没有已选择的代理组" />
             ) : (
-              filteredLogs.map((line, index) => (
-                <div className={`log-line ${logTone(line.level)}`} key={`${line.time}-${index}`}>
-                  <time>{new Date(line.time).toLocaleTimeString()}</time>
-                  <span>{line.level}</span>
+              props.selectedNodes.slice(0, 6).map((item) => <span key={item}>{item}</span>)
+            )}
+          </div>
+        </article>
+
+        <article className="panel surface">
+          <PanelTitle title="稳定性摘要" meta={props.healthSummary.total > 0 ? "已有检测数据" : "等待检测"} />
+          <div className="summary-list">
+            <Metric label="最佳节点" value={props.healthSummary.bestNode || "暂无"} />
+            <Metric label="健康节点" value={`${props.healthSummary.healthy}/${props.healthSummary.total}`} />
+            <Metric label="平均延迟" value={props.healthSummary.averageLatency ? `${props.healthSummary.averageLatency} ms` : "暂无"} />
+          </div>
+        </article>
+
+        <article className="panel surface">
+          <PanelTitle title="最近日志" meta={`${props.logs.length} 条`} />
+          <div className="mini-log-list">
+            {props.logs.length === 0 ? (
+              <EmptyState text="暂无日志" />
+            ) : (
+              props.logs.slice(0, 5).map((line, index) => (
+                <div className="mini-log" key={`${line.time}-${index}`}>
+                  <span>{translateLogLevel(line.level)}</span>
                   <p>{line.message}</p>
                 </div>
               ))
             )}
           </div>
-        </section>
+        </article>
       </section>
-    </main>
+    </div>
+  );
+}
+
+function ProxyViewPanel(props: {
+  busy: boolean;
+  filteredGroups: ProxyGroupView[];
+  groups: ProxyGroupView[];
+  proxyQuery: string;
+  proxyView: "all" | "selected" | "auto";
+  setProxyQuery(value: string): void;
+  setProxyView(value: "all" | "selected" | "auto"): void;
+  select(groupName: string, proxyName: string): void;
+}) {
+  return (
+    <section className="panel full-panel">
+      <PanelTitle title="代理" meta={`${props.filteredGroups.length}/${props.groups.length} 个分组`} />
+      <div className="filter-bar">
+        <input
+          value={props.proxyQuery}
+          onChange={(event) => props.setProxyQuery(event.target.value)}
+          placeholder="搜索分组或节点"
+          spellCheck={false}
+        />
+        <select value={props.proxyView} onChange={(event) => props.setProxyView(event.target.value as "all" | "selected" | "auto")}>
+          <option value="all">全部分组</option>
+          <option value="selected">已选择</option>
+          <option value="auto">自动分组</option>
+        </select>
+      </div>
+
+      {props.groups.length === 0 ? (
+        <EmptyState text="先在设置中加载订阅，随后这里会出现代理组和节点" />
+      ) : props.filteredGroups.length === 0 ? (
+        <EmptyState text="没有匹配当前筛选条件的代理组" />
+      ) : (
+        <div className="proxy-grid">
+          {props.filteredGroups.map((group) => (
+            <article className="proxy-card" key={group.name}>
+              <div className="proxy-card-head">
+                <div>
+                  <h3>{group.name}</h3>
+                  <span>{translateGroupType(group.type)} · {group.proxies.length} 个节点</span>
+                </div>
+                <strong>{group.selected || "未选择"}</strong>
+              </div>
+              <div className="node-grid">
+                {group.proxies.map((proxy) => (
+                  <button
+                    className={proxy.name === group.selected ? "node-card active" : "node-card"}
+                    disabled={props.busy}
+                    key={proxy.name}
+                    onClick={() => props.select(group.name, proxy.name)}
+                    type="button"
+                  >
+                    <span>{proxy.name}</span>
+                    <small>{proxyMeta(proxy)}</small>
+                  </button>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AutoStableView(props: {
+  activeGroup?: ProxyGroupView;
+  autoStable: AutoStableStatus;
+  autoStableGroup: string;
+  autoStableGroups: ProxyGroupView[];
+  busy: boolean;
+  healthBusy: boolean;
+  healthRows: HealthRow[];
+  healthSummary: ReturnType<typeof summarizeHealth>;
+  refreshHealth(): Promise<void>;
+  runTick(): void;
+  setAutoStableGroup(value: string): void;
+  toggle(enabled: boolean): void;
+}) {
+  return (
+    <div className="view-stack">
+      <section className="panel auto-hero">
+        <div>
+          <span className={props.autoStable.enabled ? "state-chip good" : "state-chip"}>{props.autoStable.enabled ? "自动选择已开启" : "自动选择未开启"}</span>
+          <h3>稳定优先的节点选择</h3>
+          <p>按延迟与失败率评分，配合冷却机制减少反复切换。</p>
+        </div>
+        <label className="switch-card">
+          <span>启用自动选择</span>
+          <input
+            checked={props.autoStable.enabled}
+            disabled={props.busy || !props.autoStable.available}
+            onChange={(event) => props.toggle(event.target.checked)}
+            type="checkbox"
+          />
+        </label>
+      </section>
+
+      <section className="quick-grid">
+        <StatusTile label="最佳节点" value={props.healthSummary.bestNode || "暂无"} tone={props.healthSummary.bestNode ? "good" : "muted"} />
+        <StatusTile label="健康节点" value={`${props.healthSummary.healthy}/${props.healthSummary.total}`} tone={props.healthSummary.healthy > 0 ? "good" : "muted"} />
+        <StatusTile label="平均延迟" value={props.healthSummary.averageLatency ? `${props.healthSummary.averageLatency} ms` : "暂无"} tone="muted" />
+        <StatusTile label="失败次数" value={`${props.healthSummary.failures}`} tone={props.healthSummary.failures > 0 ? "warn" : "good"} />
+      </section>
+
+      <section className="panel full-panel">
+        <PanelTitle title="健康检测" meta={props.autoStable.running || props.healthBusy ? "检测中" : props.autoStable.lastTickAt ? formatRelativeTime(props.autoStable.lastTickAt) : "未检测"} />
+        <div className="filter-bar">
+          <select
+            value={props.autoStableGroup}
+            onChange={(event) => props.setAutoStableGroup(event.target.value)}
+            disabled={props.busy || props.autoStableGroups.length === 0}
+          >
+            {props.autoStableGroups.length === 0 ? (
+              <option value="AUTO-STABLE">AUTO-STABLE</option>
+            ) : (
+              props.autoStableGroups.map((group) => (
+                <option key={group.name} value={group.name}>{group.name}</option>
+              ))
+            )}
+          </select>
+          <button className="ghost-button" disabled={props.busy || props.healthBusy || !props.autoStable.available} onClick={props.refreshHealth} type="button">刷新检测</button>
+          <button className="primary-button" disabled={props.busy || props.healthBusy || !props.autoStable.available || !props.autoStable.enabled} onClick={props.runTick} type="button">立即选择</button>
+        </div>
+
+        {props.activeGroup ? (
+          <div className="active-group-strip">
+            <span>当前分组</span>
+            <strong>{props.activeGroup.name}</strong>
+            <small>{props.activeGroup.selected || "未选择"}</small>
+          </div>
+        ) : null}
+
+        {props.healthRows.length === 0 ? (
+          <EmptyState text={props.autoStable.available ? "暂无健康检测数据" : "加载订阅后会生成自动稳定分组"} />
+        ) : (
+          <div className="health-list">
+            {props.healthRows.map((row) => (
+              <div className="health-item" key={`${row.groupName}-${row.node.name}`}>
+                <div>
+                  <strong>{row.node.name}</strong>
+                  <span>{row.groupName}</span>
+                </div>
+                <Metric label="评分" value={formatScore(row.node)} />
+                <Metric label="延迟" value={formatLatency(row.node)} />
+                <Metric label="失败率" value={formatFailureRate(row.node)} />
+                <Metric label="检测时间" value={formatRelativeTime(row.node.lastCheckedAt)} />
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function LogsView(props: {
+  filteredLogs: LogLine[];
+  logLevel: string;
+  logLevels: string[];
+  logQuery: string;
+  logs: LogLine[];
+  setLogLevel(value: string): void;
+  setLogQuery(value: string): void;
+}) {
+  return (
+    <section className="panel full-panel">
+      <PanelTitle title="日志" meta={`${props.filteredLogs.length}/${props.logs.length} 条`} />
+      <div className="filter-bar">
+        <select value={props.logLevel} onChange={(event) => props.setLogLevel(event.target.value)}>
+          <option value="all">全部级别</option>
+          {props.logLevels.map((level) => (
+            <option key={level} value={level}>{translateLogLevel(level)}</option>
+          ))}
+        </select>
+        <input
+          value={props.logQuery}
+          onChange={(event) => props.setLogQuery(event.target.value)}
+          placeholder="筛选日志内容"
+          spellCheck={false}
+        />
+        <button
+          className="ghost-button"
+          disabled={props.logLevel === "all" && props.logQuery.length === 0}
+          onClick={() => {
+            props.setLogLevel("all");
+            props.setLogQuery("");
+          }}
+          type="button"
+        >
+          清空
+        </button>
+      </div>
+      <div className="log-list">
+        {props.logs.length === 0 ? (
+          <EmptyState text="暂无日志" />
+        ) : props.filteredLogs.length === 0 ? (
+          <EmptyState text="没有匹配的日志" />
+        ) : (
+          props.filteredLogs.map((line, index) => (
+            <div className={`log-line ${logTone(line.level)}`} key={`${line.time}-${index}`}>
+              <time>{formatClock(line.time)}</time>
+              <span>{translateLogLevel(line.level)}</span>
+              <p>{line.message}</p>
+            </div>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function SettingsView(props: {
+  autoStable: AutoStableStatus;
+  busy: boolean;
+  status: AppStatus;
+  subscriptionUrl: string;
+  setSubscriptionUrl(value: string): void;
+  submitSubscription(event: FormEvent<HTMLFormElement>): void;
+  toggleAuto(enabled: boolean): void;
+  toggleSystemProxy(enabled: boolean): void;
+}) {
+  return (
+    <div className="settings-layout">
+      <section className="panel">
+        <PanelTitle title="订阅" meta={props.status.activeProfileName || "未加载"} />
+        <form className="subscription-form" onSubmit={props.submitSubscription}>
+          <input
+            value={props.subscriptionUrl}
+            onChange={(event) => props.setSubscriptionUrl(event.target.value)}
+            placeholder="输入订阅地址"
+            spellCheck={false}
+          />
+          <button className="primary-button" disabled={props.busy} type="submit">加载订阅</button>
+        </form>
+      </section>
+
+      <section className="panel">
+        <PanelTitle title="开关" meta="本机代理" />
+        <div className="toggle-list">
+          <label className="switch-card">
+            <span>Windows 系统代理</span>
+            <input
+              checked={props.status.systemProxyEnabled}
+              disabled={props.busy}
+              onChange={(event) => props.toggleSystemProxy(event.target.checked)}
+              type="checkbox"
+            />
+          </label>
+          <label className="switch-card">
+            <span>自动稳定选择</span>
+            <input
+              checked={props.autoStable.enabled}
+              disabled={props.busy || !props.autoStable.available}
+              onChange={(event) => props.toggleAuto(event.target.checked)}
+              type="checkbox"
+            />
+          </label>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -437,11 +630,20 @@ type HealthRow = {
   node: AutoStableNodeHealth;
 };
 
-function StatusCard(props: { label: string; value: string; tone: "good" | "muted" }) {
+function PanelTitle(props: { title: string; meta: string }) {
   return (
-    <article className={`status-card ${props.tone}`}>
+    <div className="panel-title">
+      <h2>{props.title}</h2>
+      <span>{props.meta}</span>
+    </div>
+  );
+}
+
+function StatusTile(props: { label: string; value: string; tone: "good" | "muted" | "warn" }) {
+  return (
+    <article className={`status-tile ${props.tone}`}>
       <span>{props.label}</span>
-      <strong>{props.value}</strong>
+      <strong title={props.value}>{props.value}</strong>
     </article>
   );
 }
@@ -453,6 +655,10 @@ function Metric(props: { label: string; value: string }) {
       <strong title={props.value}>{props.value}</strong>
     </div>
   );
+}
+
+function EmptyState(props: { text: string }) {
+  return <div className="empty-state">{props.text}</div>;
 }
 
 function flattenHealth(groups: AutoStableGroupHealth[]): HealthRow[] {
@@ -479,7 +685,7 @@ function filterGroups(groups: ProxyGroupView[], query: string, view: "all" | "se
     return (
       group.name.toLowerCase().includes(normalized) ||
       group.type.toLowerCase().includes(normalized) ||
-      group.selected.toLowerCase().includes(normalized) ||
+      (group.selected || "").toLowerCase().includes(normalized) ||
       group.proxies.some((proxy) => proxy.name.toLowerCase().includes(normalized))
     );
   });
@@ -530,17 +736,17 @@ function healthScore(row: AutoStableNodeHealth): number {
 
 function formatScore(row: AutoStableNodeHealth): string {
   const score = healthScore(row);
-  return Number.isFinite(score) ? score.toFixed(0) : "n/a";
+  return Number.isFinite(score) ? score.toFixed(0) : "暂无";
 }
 
 function formatLatency(row: AutoStableNodeHealth): string {
-  return typeof row.latencyMs === "number" && row.latencyMs > 0 ? `${row.latencyMs} ms` : "n/a";
+  return typeof row.latencyMs === "number" && row.latencyMs > 0 ? `${row.latencyMs} ms` : "暂无";
 }
 
 function formatFailureRate(row: AutoStableNodeHealth): string {
   const total = row.totalChecks ?? ((row.successCount || 0) + (row.failureCount || 0));
   if (!total) {
-    return "n/a";
+    return "暂无";
   }
   const rate = row.failureRate ?? ((row.failureCount || 0) / total);
   return `${(rate * 100).toFixed(0)}%`;
@@ -548,22 +754,30 @@ function formatFailureRate(row: AutoStableNodeHealth): string {
 
 function formatRelativeTime(value?: string): string {
   if (!value) {
-    return "n/a";
+    return "暂无";
   }
   const time = new Date(value).getTime();
   if (!Number.isFinite(time)) {
-    return "n/a";
+    return "暂无";
   }
   const seconds = Math.max(0, Math.round((Date.now() - time) / 1000));
   if (seconds < 60) {
-    return `${seconds}s ago`;
+    return `${seconds} 秒前`;
   }
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) {
-    return `${minutes}m ago`;
+    return `${minutes} 分钟前`;
   }
   const hours = Math.round(minutes / 60);
-  return `${hours}h ago`;
+  return `${hours} 小时前`;
+}
+
+function formatClock(value: string): string {
+  const time = new Date(value);
+  if (Number.isNaN(time.getTime())) {
+    return "暂无";
+  }
+  return time.toLocaleTimeString("zh-CN", { hour12: false });
 }
 
 function formatBytes(value: number): string {
@@ -581,6 +795,37 @@ function formatBytes(value: number): string {
   return `${size.toFixed(digits)} ${units[unitIndex]}`;
 }
 
+function translateGroupType(type: string): string {
+  const normalized = type.toLowerCase();
+  if (normalized.includes("auto-stable")) {
+    return "自动稳定";
+  }
+  if (normalized.includes("url-test")) {
+    return "延迟测试";
+  }
+  if (normalized.includes("fallback")) {
+    return "故障回退";
+  }
+  if (normalized.includes("select")) {
+    return "手动选择";
+  }
+  if (normalized.includes("auto")) {
+    return "自动";
+  }
+  return type || "分组";
+}
+
+function proxyMeta(proxy: { type?: string; latencyMs?: number; alive: boolean }): string {
+  const parts = [proxy.type || "节点"];
+  if (typeof proxy.latencyMs === "number" && proxy.latencyMs > 0) {
+    parts.push(`${proxy.latencyMs} ms`);
+  }
+  if (!proxy.alive) {
+    parts.push("不可用");
+  }
+  return parts.join(" · ");
+}
+
 function logTone(level: string): string {
   const normalized = level.toLowerCase();
   if (normalized.includes("error") || normalized.includes("fatal")) {
@@ -593,4 +838,28 @@ function logTone(level: string): string {
     return "muted";
   }
   return "info";
+}
+
+function translateLogLevel(level: string): string {
+  const normalized = level.toLowerCase();
+  if (normalized.includes("fatal")) {
+    return "致命";
+  }
+  if (normalized.includes("error")) {
+    return "错误";
+  }
+  if (normalized.includes("warn")) {
+    return "警告";
+  }
+  if (normalized.includes("debug")) {
+    return "调试";
+  }
+  if (normalized.includes("trace")) {
+    return "追踪";
+  }
+  return level || "信息";
+}
+
+function toMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
