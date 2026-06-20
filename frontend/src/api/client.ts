@@ -96,6 +96,9 @@ type WailsApp = {
 declare global {
   interface Window {
     go?: {
+      app?: {
+        App?: WailsApp;
+      };
       main?: {
         App?: WailsApp;
       };
@@ -104,7 +107,7 @@ declare global {
 }
 
 function app(): WailsApp {
-  const binding = window.go?.main?.App;
+  const binding = window.go?.app?.App ?? window.go?.main?.App;
   if (!binding) {
     throw new Error("Wails 后端绑定不可用");
   }

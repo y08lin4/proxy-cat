@@ -213,76 +213,191 @@ export default function App() {
 
         {error ? <div className="notice error">{error}</div> : null}
 
-        {activeView === "overview" ? (
-          <OverviewView
+        <section className="content-grid">
+          <div className="main-column">
+            {activeView === "overview" ? (
+              <OverviewView
+                autoStable={autoStable}
+                connection={connection}
+                groups={groups}
+                healthSummary={healthSummary}
+                logs={logs}
+                selectedNodes={selectedNodes}
+                status={status}
+              />
+            ) : null}
+
+            {activeView === "proxies" ? (
+              <ProxyViewPanel
+                busy={busy}
+                filteredGroups={filteredGroups}
+                groups={groups}
+                proxyQuery={proxyQuery}
+                proxyView={proxyView}
+                setProxyQuery={setProxyQuery}
+                setProxyView={setProxyView}
+                select={(groupName, proxyName) => run(() => selectProxy(groupName, proxyName))}
+              />
+            ) : null}
+
+            {activeView === "auto" ? (
+              <AutoStableView
+                activeGroup={activeGroup}
+                autoStable={autoStable}
+                autoStableGroup={autoStableGroup}
+                autoStableGroups={autoStableGroups}
+                busy={busy}
+                healthBusy={healthBusy}
+                healthRows={healthRows}
+                healthSummary={healthSummary}
+                refreshHealth={refreshHealth}
+                runTick={() => run(async () => {
+                  await runAutoStableTick();
+                })}
+                setAutoStableGroup={setAutoStableGroup}
+                toggle={(enabled) => run(() => setAutoStableEnabled(enabled))}
+              />
+            ) : null}
+
+            {activeView === "logs" ? (
+              <LogsView
+                filteredLogs={filteredLogs}
+                logLevel={logLevel}
+                logLevels={logLevels}
+                logQuery={logQuery}
+                logs={logs}
+                setLogLevel={setLogLevel}
+                setLogQuery={setLogQuery}
+              />
+            ) : null}
+
+            {activeView === "settings" ? (
+              <SettingsView
+                autoStable={autoStable}
+                busy={busy}
+                status={status}
+                subscriptionUrl={subscriptionUrl}
+                setSubscriptionUrl={setSubscriptionUrl}
+                submitSubscription={submitSubscription}
+                toggleAuto={(enabled) => run(() => setAutoStableEnabled(enabled))}
+                toggleSystemProxy={(enabled) => run(() => setSystemProxy(enabled))}
+              />
+            ) : null}
+          </div>
+
+          <ContextPanel
             autoStable={autoStable}
+            busy={busy}
             connection={connection}
             groups={groups}
             healthSummary={healthSummary}
             logs={logs}
             selectedNodes={selectedNodes}
             status={status}
-          />
-        ) : null}
-
-        {activeView === "proxies" ? (
-          <ProxyViewPanel
-            busy={busy}
-            filteredGroups={filteredGroups}
-            groups={groups}
-            proxyQuery={proxyQuery}
-            proxyView={proxyView}
-            setProxyQuery={setProxyQuery}
-            setProxyView={setProxyView}
-            select={(groupName, proxyName) => run(() => selectProxy(groupName, proxyName))}
-          />
-        ) : null}
-
-        {activeView === "auto" ? (
-          <AutoStableView
-            activeGroup={activeGroup}
-            autoStable={autoStable}
-            autoStableGroup={autoStableGroup}
-            autoStableGroups={autoStableGroups}
-            busy={busy}
-            healthBusy={healthBusy}
-            healthRows={healthRows}
-            healthSummary={healthSummary}
-            refreshHealth={refreshHealth}
-            runTick={() => run(async () => {
-              await runAutoStableTick();
-            })}
-            setAutoStableGroup={setAutoStableGroup}
-            toggle={(enabled) => run(() => setAutoStableEnabled(enabled))}
-          />
-        ) : null}
-
-        {activeView === "logs" ? (
-          <LogsView
-            filteredLogs={filteredLogs}
-            logLevel={logLevel}
-            logLevels={logLevels}
-            logQuery={logQuery}
-            logs={logs}
-            setLogLevel={setLogLevel}
-            setLogQuery={setLogQuery}
-          />
-        ) : null}
-
-        {activeView === "settings" ? (
-          <SettingsView
-            autoStable={autoStable}
-            busy={busy}
-            status={status}
-            subscriptionUrl={subscriptionUrl}
-            setSubscriptionUrl={setSubscriptionUrl}
-            submitSubscription={submitSubscription}
+            start={() => run(startCore)}
+            stop={() => run(stopCore)}
+            restart={() => run(restartCore)}
             toggleAuto={(enabled) => run(() => setAutoStableEnabled(enabled))}
             toggleSystemProxy={(enabled) => run(() => setSystemProxy(enabled))}
           />
-        ) : null}
+        </section>
       </section>
     </main>
+  );
+}
+
+function ContextPanel(props: {
+  autoStable: AutoStableStatus;
+  busy: boolean;
+  connection: ConnectionStatus;
+  groups: ProxyGroupView[];
+  healthSummary: ReturnType<typeof summarizeHealth>;
+  logs: LogLine[];
+  selectedNodes: string[];
+  status: AppStatus;
+  start(): void;
+  stop(): void;
+  restart(): void;
+  toggleAuto(enabled: boolean): void;
+  toggleSystemProxy(enabled: boolean): void;
+}) {
+  return (
+    <aside className="context-column" aria-label="运行状态">
+      <section className="context-card depth-card">
+        <div className="context-head">
+          <span className={props.status.coreRunning ? "state-chip good" : "state-chip"}>{props.status.coreRunning ? "运行中" : "未启动"}</span>
+          <strong>运行控制</strong>
+        </div>
+        <div className="control-grid">
+          <button className="primary-button" disabled={props.busy || props.status.coreRunning} onClick={props.start} type="button">启动</button>
+          <button className="ghost-button" disabled={props.busy || !props.status.coreRunning} onClick={props.stop} type="button">停止</button>
+          <button className="ghost-button" disabled={props.busy} onClick={props.restart} type="button">重启</button>
+        </div>
+      </section>
+
+      <section className="context-card">
+        <PanelTitle title="实时状态" meta={props.status.controllerAddress} />
+        <div className="status-rows">
+          <StatusLine label="系统代理" value={props.status.systemProxyEnabled ? "已开启" : "未开启"} good={props.status.systemProxyEnabled} />
+          <StatusLine label="自动选择" value={props.autoStable.enabled ? "已开启" : "未开启"} good={props.autoStable.enabled} />
+          <StatusLine label="连接数" value={`${props.connection.connectionCount}`} good={props.connection.connectionCount > 0} />
+          <StatusLine label="代理组" value={`${props.groups.length} 个`} good={props.groups.length > 0} />
+        </div>
+      </section>
+
+      <section className="context-card">
+        <PanelTitle title="快捷开关" meta="本机" />
+        <div className="toggle-list compact">
+          <label className="switch-card">
+            <span>系统代理</span>
+            <input
+              checked={props.status.systemProxyEnabled}
+              disabled={props.busy}
+              onChange={(event) => props.toggleSystemProxy(event.target.checked)}
+              type="checkbox"
+            />
+          </label>
+          <label className="switch-card">
+            <span>自动选择</span>
+            <input
+              checked={props.autoStable.enabled}
+              disabled={props.busy || !props.autoStable.available}
+              onChange={(event) => props.toggleAuto(event.target.checked)}
+              type="checkbox"
+            />
+          </label>
+        </div>
+      </section>
+
+      <section className="context-card">
+        <PanelTitle title="当前出口" meta={`${props.selectedNodes.length} 项`} />
+        <div className="context-list">
+          {props.selectedNodes.length === 0 ? (
+            <span>暂无已选择分组</span>
+          ) : (
+            props.selectedNodes.slice(0, 4).map((item) => <span key={item}>{item}</span>)
+          )}
+        </div>
+      </section>
+
+      <section className="context-card">
+        <PanelTitle title="稳定性" meta={props.healthSummary.bestNode || "暂无"} />
+        <div className="status-rows">
+          <StatusLine label="健康节点" value={`${props.healthSummary.healthy}/${props.healthSummary.total}`} good={props.healthSummary.healthy > 0} />
+          <StatusLine label="平均延迟" value={props.healthSummary.averageLatency ? `${props.healthSummary.averageLatency} ms` : "暂无"} />
+          <StatusLine label="最近日志" value={`${props.logs.length} 条`} />
+        </div>
+      </section>
+    </aside>
+  );
+}
+
+function StatusLine(props: { label: string; value: string; good?: boolean }) {
+  return (
+    <div className={props.good ? "status-line good" : "status-line"}>
+      <span>{props.label}</span>
+      <strong>{props.value}</strong>
+    </div>
   );
 }
 
