@@ -14,5 +14,29 @@ The project goal is simple: provide a Clash-style client with more stable automa
 
 ## Current Status
 
-Phase 0 is frozen in `docs/`. Phase 1 is in progress.
+Phase 0 is frozen in `docs/`. Phase 1 has a code-level MVP for the Go backend, Wails shell, and React control panel.
 
+## Development
+
+Prerequisites:
+
+- Go 1.22+
+- Node.js
+- pnpm
+- Wails v2 CLI
+- `mihomo.exe` available on `PATH` or beside the app runtime
+
+Common checks:
+
+```bash
+go test ./...
+cd frontend
+pnpm install --ignore-scripts
+pnpm run build
+```
+
+Run with Wails:
+
+```bash
+wails dev
+```
