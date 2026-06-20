@@ -61,8 +61,8 @@ func New() *App {
 }
 
 func (a *App) GetAppStatus() AppStatus {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.refreshCoreStatusLocked()
 	return a.status
 }
@@ -274,6 +274,35 @@ func (a *App) SelectProxy(groupName string, proxyName string) error {
 	a.appendLogLocked("info", fmt.Sprintf("Proxy group %s selected %s", groupName, proxyName))
 	a.mu.Unlock()
 	return nil
+}
+
+func (a *App) GetConnectionStatus() (ConnectionStatus, error) {
+	a.mu.Lock()
+	a.refreshCoreStatusLocked()
+	controller := a.status.ControllerAddress
+	secret := a.active.Settings.Secret
+	running := a.status.CoreRunning
+	httpClient := a.httpClient
+	a.mu.Unlock()
+
+	status := ConnectionStatus{CoreRunning: running}
+	if !running {
+		return status, nil
+	}
+
+	client, err := core.NewMihomoClient(controller, secret, httpClient)
+	if err != nil {
+		return status, a.fail(err)
+	}
+	connections, err := client.GetConnections(a.context())
+	if err != nil {
+		return status, a.fail(err)
+	}
+
+	status.UploadTotal = connections.UploadTotal
+	status.DownloadTotal = connections.DownloadTotal
+	status.ConnectionCount = len(connections.Connections)
+	return status, nil
 }
 
 func (a *App) GetLogs(limit int) []LogLine {

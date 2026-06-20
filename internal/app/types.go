@@ -12,6 +12,14 @@ type AppStatus struct {
 	LastError          string `json:"lastError,omitempty"`
 }
 
+// ConnectionStatus is the Phase 3 connection summary from Mihomo /connections.
+type ConnectionStatus struct {
+	CoreRunning     bool  `json:"coreRunning"`
+	UploadTotal     int64 `json:"uploadTotal"`
+	DownloadTotal   int64 `json:"downloadTotal"`
+	ConnectionCount int   `json:"connectionCount"`
+}
+
 // ProxyGroupView is the frontend-facing proxy group snapshot.
 type ProxyGroupView struct {
 	Name     string      `json:"name"`
