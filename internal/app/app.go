@@ -25,14 +25,16 @@ type App struct {
 	httpClient *http.Client
 	launcher   *core.MihomoLauncher
 	system     *core.WindowsSystemProxy
+	autoStable AutoStableRunner
 
-	status       AppStatus
-	logs         []LogLine
-	active       profile.Profile
-	activeConfig string
-	dataDir      string
-	mihomoHome   string
-	mihomoBinary string
+	status           AppStatus
+	autoStableStatus AutoStableStatus
+	logs             []LogLine
+	active           profile.Profile
+	activeConfig     string
+	dataDir          string
+	mihomoHome       string
+	mihomoBinary     string
 }
 
 func New() *App {
@@ -47,7 +49,13 @@ func New() *App {
 		status: AppStatus{
 			CoreRunning:        false,
 			SystemProxyEnabled: false,
+			AutoStableEnabled:  false,
 			ControllerAddress:  "127.0.0.1:9090",
+		},
+		autoStableStatus: AutoStableStatus{
+			Available: false,
+			Enabled:   false,
+			Running:   false,
 		},
 	}
 }
@@ -179,10 +187,21 @@ func (a *App) LoadSubscriptionData(subscriptionURL string, data []byte) error {
 	if err != nil {
 		return a.fail(err)
 	}
+	autoStableRunner, err := newMihomoAutoStableRunner(p, a.httpClient)
+	if err != nil {
+		return a.fail(err)
+	}
 
 	a.mu.Lock()
 	a.active = p
 	a.activeConfig = configPath
+	a.autoStable = autoStableRunner
+	a.autoStableStatus = AutoStableStatus{
+		Available: true,
+		Enabled:   a.status.AutoStableEnabled,
+		Running:   a.status.AutoStableEnabled,
+		Health:    autoStableRunner.health(time.Now()),
+	}
 	a.status.ActiveProfileName = p.Name
 	a.status.ControllerAddress = p.Settings.ExternalController
 	a.status.LastError = ""

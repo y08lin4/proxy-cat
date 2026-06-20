@@ -28,8 +28,8 @@ rules:
 		t.Fatalf("ActiveProfileName = %q, want Default", status.ActiveProfileName)
 	}
 	groups := a.GetProxyGroups()
-	if len(groups) != 2 {
-		t.Fatalf("len(groups) = %d, want 2", len(groups))
+	if !hasGroupWithProxy(groups, "PROXY", "Node A") {
+		t.Fatalf("groups missing PROXY/Node A: %+v", groups)
 	}
 	config, err := os.ReadFile(filepath.Join(a.dataDir, "profiles", "active", "config.yaml"))
 	if err != nil {
@@ -68,4 +68,18 @@ proxy-groups:
 	if groups[0].Selected != "Node B" {
 		t.Fatalf("Selected = %q, want Node B", groups[0].Selected)
 	}
+}
+
+func hasGroupWithProxy(groups []ProxyGroupView, groupName string, proxyName string) bool {
+	for _, group := range groups {
+		if group.Name != groupName {
+			continue
+		}
+		for _, proxy := range group.Proxies {
+			if proxy.Name == proxyName {
+				return true
+			}
+		}
+	}
+	return false
 }
