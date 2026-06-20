@@ -9,6 +9,8 @@ import (
 
 var ErrAutoStableUnavailable = errors.New("auto-stable service is not available")
 
+const autoStableTickCooldown = 5 * time.Second
+
 // AutoStableRunner is the narrow boundary for the Phase 2 autostable package.
 // The app layer owns Wails-facing state; a future runner owns health checks and
 // selection policy.
@@ -74,6 +76,7 @@ func (a *App) RunAutoStableTick() (AutoStableActionResult, error) {
 	ctx := a.context()
 	a.mu.RLock()
 	runner := a.autoStable
+	lastTickAt := a.autoStableTickAt
 	a.mu.RUnlock()
 
 	if runner == nil {
@@ -87,11 +90,33 @@ func (a *App) RunAutoStableTick() (AutoStableActionResult, error) {
 		return result, ErrAutoStableUnavailable
 	}
 
+	if time.Since(lastTickAt) < autoStableTickCooldown {
+		result := AutoStableActionResult{
+			Action:      "tick",
+			Changed:     false,
+			Message:     "Auto-stable tick skipped by cooldown",
+			CompletedAt: time.Now(),
+			Health:      a.autoStableSnapshot().Health,
+		}
+		a.mu.Lock()
+		a.autoStableStatus.LastAction = result.Action
+		a.autoStableStatus.LastError = result.Message
+		a.appendLogLocked("info", result.Message)
+		a.mu.Unlock()
+		return result, nil
+	}
+
 	result, err := runner.Tick(ctx)
 	if err != nil {
 		return result, a.fail(fmt.Errorf("auto-stable tick: %w", err))
 	}
+	if result.CompletedAt.IsZero() {
+		result.CompletedAt = time.Now()
+	}
 	a.recordAutoStableAction(result)
+	a.mu.Lock()
+	a.autoStableTickAt = result.CompletedAt
+	a.mu.Unlock()
 	return result, nil
 }
 
@@ -140,7 +165,23 @@ func (a *App) autoStableSnapshotLocked() AutoStableStatus {
 }
 
 func (a *App) mergeAutoStableStatusLocked(status AutoStableStatus) {
+	lastTickAt := a.autoStableStatus.LastTickAt
+	lastAction := a.autoStableStatus.LastAction
+	lastSelected := a.autoStableStatus.LastSelected
+	lastError := a.autoStableStatus.LastError
 	a.autoStableStatus = status
+	if a.autoStableStatus.LastTickAt.IsZero() {
+		a.autoStableStatus.LastTickAt = lastTickAt
+	}
+	if a.autoStableStatus.LastAction == "" {
+		a.autoStableStatus.LastAction = lastAction
+	}
+	if a.autoStableStatus.LastSelected == "" {
+		a.autoStableStatus.LastSelected = lastSelected
+	}
+	if a.autoStableStatus.LastError == "" {
+		a.autoStableStatus.LastError = lastError
+	}
 	a.status.AutoStableEnabled = status.Enabled
 }
 

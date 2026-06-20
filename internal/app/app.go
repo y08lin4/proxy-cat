@@ -29,6 +29,7 @@ type App struct {
 
 	status           AppStatus
 	autoStableStatus AutoStableStatus
+	autoStableTickAt time.Time
 	logs             []LogLine
 	active           profile.Profile
 	activeConfig     string
@@ -61,6 +62,20 @@ func New() *App {
 }
 
 func (a *App) GetAppStatus() AppStatus {
+	if a.launcher != nil {
+		recovered, err := a.launcher.RecoverIfNeeded(a.context())
+		a.mu.Lock()
+		if err != nil {
+			a.status.LastError = fmt.Sprintf("recover mihomo core: %v", err)
+			a.appendLogLocked("error", a.status.LastError)
+		} else if recovered {
+			a.status.CoreRunning = true
+			a.status.LastError = ""
+			a.appendLogLocked("info", "Mihomo core recovered")
+		}
+		a.mu.Unlock()
+	}
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.refreshCoreStatusLocked()
@@ -113,6 +128,29 @@ func (a *App) RestartCore() error {
 		return err
 	}
 	return a.StartCore()
+}
+
+func (a *App) RecoverCoreIfNeeded() (bool, error) {
+	if a.launcher == nil {
+		return false, nil
+	}
+	recovered, err := a.launcher.RecoverIfNeeded(a.context())
+	if err != nil {
+		return false, a.fail(fmt.Errorf("recover mihomo core: %w", err))
+	}
+	if !recovered {
+		a.mu.Lock()
+		a.refreshCoreStatusLocked()
+		a.mu.Unlock()
+		return false, nil
+	}
+
+	a.mu.Lock()
+	a.status.CoreRunning = true
+	a.status.LastError = ""
+	a.appendLogLocked("info", "Mihomo core recovered")
+	a.mu.Unlock()
+	return true, nil
 }
 
 func (a *App) SetSystemProxy(enabled bool) error {
@@ -340,7 +378,14 @@ func (a *App) refreshCoreStatusLocked() {
 	if a.launcher == nil {
 		return
 	}
-	a.status.CoreRunning = a.launcher.Status().Running
+	status := a.launcher.Status()
+	a.status.CoreRunning = status.Running
+	if status.LastExit.Exited && !status.LastExit.Expected && !status.Running {
+		a.status.LastError = status.LastExit.Error
+		if a.status.LastError == "" {
+			a.status.LastError = fmt.Sprintf("mihomo exited with code %d", status.LastExit.ExitCode)
+		}
+	}
 }
 
 func (a *App) fail(err error) error {

@@ -128,12 +128,50 @@ func TestAutoStableRunnerMethodsAreWired(t *testing.T) {
 	}
 }
 
+func TestRunAutoStableTickCooldownSkipsRunner(t *testing.T) {
+	a := New()
+	completedAt := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
+	runner := &fakeAutoStableRunner{
+		status: AutoStableStatus{Available: true, Enabled: true, Running: true},
+		tick: AutoStableActionResult{
+			Action:      "tick",
+			Selected:    "Node A",
+			CompletedAt: completedAt,
+		},
+	}
+	a.autoStable = runner
+
+	first, err := a.RunAutoStableTick()
+	if err != nil {
+		t.Fatalf("first RunAutoStableTick() error = %v", err)
+	}
+	if first.Selected != "Node A" {
+		t.Fatalf("first.Selected = %q, want Node A", first.Selected)
+	}
+
+	second, err := a.RunAutoStableTick()
+	if err != nil {
+		t.Fatalf("second RunAutoStableTick() error = %v", err)
+	}
+	if second.Changed || second.Message != "Auto-stable tick skipped by cooldown" {
+		t.Fatalf("unexpected cooldown result: %#v", second)
+	}
+	if runner.tickCalls != 1 {
+		t.Fatalf("tickCalls = %d, want 1", runner.tickCalls)
+	}
+	status := a.GetAutoStableStatus()
+	if status.LastError != "Auto-stable tick skipped by cooldown" {
+		t.Fatalf("LastError = %q, want cooldown message", status.LastError)
+	}
+}
+
 type fakeAutoStableRunner struct {
 	status        AutoStableStatus
 	tick          AutoStableActionResult
 	selectResult  AutoStableActionResult
 	enabled       bool
 	selectedGroup string
+	tickCalls     int
 }
 
 func (f *fakeAutoStableRunner) Status(context.Context) (AutoStableStatus, error) {
@@ -147,6 +185,7 @@ func (f *fakeAutoStableRunner) SetEnabled(_ context.Context, enabled bool) error
 }
 
 func (f *fakeAutoStableRunner) Tick(context.Context) (AutoStableActionResult, error) {
+	f.tickCalls++
 	return f.tick, nil
 }
 

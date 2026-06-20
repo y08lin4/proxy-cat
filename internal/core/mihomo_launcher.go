@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 	"sync"
+	"time"
 )
 
 var ErrMihomoRunning = errors.New("mihomo is already running")
@@ -22,20 +23,44 @@ type MihomoStatus struct {
 	BinaryPath string
 	ConfigPath string
 	HomeDir    string
+	LastExit   MihomoExitStatus
+}
+
+type MihomoExitStatus struct {
+	Exited   bool
+	PID      int
+	ExitCode int
+	Error    string
+	Expected bool
+	ExitedAt time.Time
 }
 
 type MihomoLauncher struct {
 	mu       sync.Mutex
-	command  commandContextFunc
+	command  CommandContextFunc
 	cmd      *exec.Cmd
-	done     chan error
+	done     chan mihomoProcessExit
 	lastConf MihomoLaunchConfig
+	lastExit MihomoExitStatus
 }
 
-type commandContextFunc func(context.Context, string, ...string) *exec.Cmd
+type CommandContextFunc func(context.Context, string, ...string) *exec.Cmd
+
+type mihomoProcessExit struct {
+	pid int
+	err error
+	at  time.Time
+}
 
 func NewMihomoLauncher() *MihomoLauncher {
 	return &MihomoLauncher{command: exec.CommandContext}
+}
+
+func NewMihomoLauncherWithCommand(command CommandContextFunc) *MihomoLauncher {
+	if command == nil {
+		command = exec.CommandContext
+	}
+	return &MihomoLauncher{command: command}
 }
 
 func (l *MihomoLauncher) Start(ctx context.Context, conf MihomoLaunchConfig) error {
@@ -55,14 +80,16 @@ func (l *MihomoLauncher) Start(ctx context.Context, conf MihomoLaunchConfig) err
 		return fmt.Errorf("start mihomo: %w", err)
 	}
 
-	done := make(chan error, 1)
+	done := make(chan mihomoProcessExit, 1)
+	pid := cmd.Process.Pid
 	go func() {
-		done <- cmd.Wait()
+		done <- mihomoProcessExit{pid: pid, err: cmd.Wait(), at: time.Now()}
 	}()
 
 	l.cmd = cmd
 	l.done = done
 	l.lastConf = conf
+	l.lastExit = MihomoExitStatus{}
 	return nil
 }
 
@@ -81,10 +108,10 @@ func (l *MihomoLauncher) Stop(ctx context.Context) error {
 	}
 
 	select {
-	case err := <-done:
-		l.clearIfCurrent(cmd)
-		if err != nil && !isExpectedProcessExit(err) {
-			return fmt.Errorf("wait mihomo exit: %w", err)
+	case exit := <-done:
+		l.clearIfCurrent(cmd, exit, true)
+		if exit.err != nil && !isExpectedProcessExit(exit.err) {
+			return fmt.Errorf("wait mihomo exit: %w", exit.err)
 		}
 		return nil
 	case <-ctx.Done():
@@ -108,6 +135,7 @@ func (l *MihomoLauncher) Status() MihomoStatus {
 		BinaryPath: l.lastConf.BinaryPath,
 		ConfigPath: l.lastConf.ConfigPath,
 		HomeDir:    l.lastConf.HomeDir,
+		LastExit:   l.lastExit,
 	}
 	if status.Running && l.cmd != nil && l.cmd.Process != nil {
 		status.PID = l.cmd.Process.Pid
@@ -115,11 +143,34 @@ func (l *MihomoLauncher) Status() MihomoStatus {
 	return status
 }
 
-func (l *MihomoLauncher) clearIfCurrent(cmd *exec.Cmd) {
+func (l *MihomoLauncher) NeedsRecovery() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.isRunningLocked()
+	return l.needsRecoveryLocked()
+}
+
+func (l *MihomoLauncher) RecoverIfNeeded(ctx context.Context) (bool, error) {
+	l.mu.Lock()
+	if l.isRunningLocked() || !l.needsRecoveryLocked() {
+		l.mu.Unlock()
+		return false, nil
+	}
+	conf := l.lastConf
+	l.mu.Unlock()
+
+	if err := l.Start(ctx, conf); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (l *MihomoLauncher) clearIfCurrent(cmd *exec.Cmd, exit mihomoProcessExit, expected bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	if l.cmd == cmd {
+		l.recordExitLocked(exit, expected)
 		l.cmd = nil
 		l.done = nil
 	}
@@ -131,13 +182,35 @@ func (l *MihomoLauncher) isRunningLocked() bool {
 	}
 
 	select {
-	case <-l.done:
+	case exit := <-l.done:
+		l.recordExitLocked(exit, false)
 		l.cmd = nil
 		l.done = nil
 		return false
 	default:
 		return true
 	}
+}
+
+func (l *MihomoLauncher) needsRecoveryLocked() bool {
+	if l.cmd != nil && l.done != nil {
+		return false
+	}
+	return l.lastExit.Exited && !l.lastExit.Expected && l.lastConf.validate() == nil
+}
+
+func (l *MihomoLauncher) recordExitLocked(exit mihomoProcessExit, expected bool) {
+	status := MihomoExitStatus{
+		Exited:   true,
+		PID:      exit.pid,
+		ExitCode: exitCode(exit.err),
+		Expected: expected,
+		ExitedAt: exit.at,
+	}
+	if exit.err != nil {
+		status.Error = exit.err.Error()
+	}
+	l.lastExit = status
 }
 
 func (conf MihomoLaunchConfig) validate() error {
@@ -160,4 +233,15 @@ func mihomoArgs(conf MihomoLaunchConfig) []string {
 func isExpectedProcessExit(err error) bool {
 	var exitErr *exec.ExitError
 	return errors.As(err, &exitErr)
+}
+
+func exitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode()
+	}
+	return -1
 }

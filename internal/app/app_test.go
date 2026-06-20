@@ -1,12 +1,17 @@
 package app
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/y08lin4/proxy-cat/internal/core"
 )
 
 func TestLoadSubscriptionDataGeneratesConfigAndGroups(t *testing.T) {
@@ -147,6 +152,71 @@ func TestGetConnectionStatusStoppedDoesNotCallMihomo(t *testing.T) {
 	}
 }
 
+func TestRecoverCoreIfNeededRestartsUnexpectedExit(t *testing.T) {
+	a := New()
+	a.dataDir = t.TempDir()
+	a.mihomoHome = filepath.Join(a.dataDir, "mihomo")
+	starts := 0
+	launcher := core.NewMihomoLauncherWithCommand(func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		starts++
+		if starts == 1 {
+			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestAppHelperProcess$")
+			cmd.Env = append(os.Environ(), "PROXY_CAT_APP_HELPER=unexpected")
+			return cmd
+		}
+		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestAppHelperProcess$")
+		cmd.Env = append(os.Environ(), "PROXY_CAT_APP_HELPER=sleep")
+		return cmd
+	})
+	a.launcher = launcher
+	data := []byte(`
+proxies:
+  - { name: "Node A", type: ss, server: example.com, port: 8388, cipher: aes-128-gcm, password: pass }
+`)
+	if err := a.LoadSubscriptionData("", data); err != nil {
+		t.Fatalf("LoadSubscriptionData() error = %v", err)
+	}
+	if err := a.StartCore(); err != nil {
+		t.Fatalf("StartCore() error = %v", err)
+	}
+	waitForApp(t, time.Second, func() bool {
+		return !launcher.Status().Running
+	})
+	if !launcher.NeedsRecovery() {
+		t.Fatal("launcher.NeedsRecovery() = false, want true")
+	}
+
+	status := a.GetAppStatus()
+	if !status.CoreRunning {
+		t.Fatal("GetAppStatus().CoreRunning = false after automatic recovery, want true")
+	}
+	if status.LastError != "" {
+		t.Fatalf("LastError = %q, want empty after recovery", status.LastError)
+	}
+	if starts != 2 {
+		t.Fatalf("starts = %d, want 2", starts)
+	}
+
+	recovered, err := a.RecoverCoreIfNeeded()
+	if err != nil {
+		t.Fatalf("RecoverCoreIfNeeded() error = %v", err)
+	}
+	if recovered {
+		t.Fatal("RecoverCoreIfNeeded() recovered = true after automatic recovery, want false")
+	}
+
+	if err := a.StopCore(); err != nil {
+		t.Fatalf("StopCore() error = %v", err)
+	}
+	recovered, err = a.RecoverCoreIfNeeded()
+	if err != nil {
+		t.Fatalf("RecoverCoreIfNeeded() after stop error = %v", err)
+	}
+	if recovered {
+		t.Fatal("RecoverCoreIfNeeded() recovered after explicit stop, want false")
+	}
+}
+
 func hasGroupWithProxy(groups []ProxyGroupView, groupName string, proxyName string) bool {
 	for _, group := range groups {
 		if group.Name != groupName {
@@ -159,4 +229,27 @@ func hasGroupWithProxy(groups []ProxyGroupView, groupName string, proxyName stri
 		}
 	}
 	return false
+}
+
+func TestAppHelperProcess(t *testing.T) {
+	switch os.Getenv("PROXY_CAT_APP_HELPER") {
+	case "unexpected":
+		os.Exit(9)
+	case "sleep":
+		time.Sleep(30 * time.Second)
+	default:
+		t.Skip("helper process only")
+	}
+}
+
+func waitForApp(t *testing.T, timeout time.Duration, ok func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if ok() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("condition was not met before timeout")
 }
