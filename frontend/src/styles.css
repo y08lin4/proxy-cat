@@ -97,7 +97,6 @@ select {
 .topbar p,
 .panel h3,
 .group-title h4,
-.connection-copy p,
 .log-line p {
   margin: 0;
 }
@@ -169,7 +168,9 @@ select {
 
 .toolbar,
 .subscription-form,
-.health-actions {
+.health-actions,
+.proxy-actions,
+.log-controls {
   display: flex;
   gap: 8px;
 }
@@ -219,6 +220,68 @@ select {
 
 .status-card.good {
   border-color: #76a88b;
+}
+
+.connection-strip {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.2fr) repeat(4, minmax(120px, 1fr));
+  gap: 10px;
+  border: 1px solid #d5dde1;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.connection-status,
+.metric {
+  min-width: 0;
+  border: 1px solid #edf1f3;
+  border-radius: 6px;
+  background: #f8fbfb;
+  padding: 10px;
+}
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.connection-status > div,
+.metric {
+  display: grid;
+  gap: 4px;
+}
+
+.status-dot {
+  flex: 0 0 10px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #8a98a0;
+}
+
+.connection-status.good .status-dot {
+  background: #2f8d5b;
+}
+
+.connection-status.warn .status-dot {
+  background: #b7781f;
+}
+
+.connection-status span,
+.metric span {
+  color: #667982;
+  font-size: 12px;
+}
+
+.connection-status strong,
+.metric strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
 }
 
 .panel-row {
@@ -275,7 +338,7 @@ select {
 
 .health-row {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) 90px 100px 88px;
+  grid-template-columns: minmax(160px, 1fr) 90px 100px 88px 96px;
   gap: 12px;
   align-items: center;
   min-height: 42px;
@@ -308,11 +371,33 @@ select {
   min-width: 0;
 }
 
-.connection-copy {
+.connection-list {
   display: grid;
-  gap: 8px;
+  gap: 7px;
   color: #44545b;
-  line-height: 1.5;
+}
+
+.connection-list span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid #edf1f3;
+  border-radius: 6px;
+  background: #f8fbfb;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.connection-list small {
+  color: #667982;
+}
+
+.scan-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
 }
 
 .group-list {
@@ -368,12 +453,36 @@ select {
   background: #e7f2ef;
 }
 
+.node:not(.active) small {
+  color: #667982;
+}
+
 .empty-state {
   border: 1px dashed #c5ced3;
   border-radius: 6px;
   color: #667982;
   padding: 18px;
   text-align: center;
+}
+
+.empty-state.compact {
+  padding: 12px;
+}
+
+.proxy-actions,
+.log-controls {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.proxy-actions input,
+.log-controls input {
+  width: 220px;
+}
+
+.proxy-actions select,
+.log-controls select {
+  max-width: 150px;
 }
 
 .log-list {
@@ -391,8 +500,30 @@ select {
   padding: 7px 0;
 }
 
+.log-line.bad span {
+  color: #9f341f;
+  font-weight: 700;
+}
+
+.log-line.warn span {
+  color: #a15c11;
+  font-weight: 700;
+}
+
+.log-line.muted {
+  color: #667982;
+}
+
 .log-line p {
   overflow-wrap: anywhere;
+}
+
+.cell-good {
+  color: #255f5c;
+}
+
+.cell-bad {
+  color: #9f341f;
 }
 
 @media (max-width: 920px) {
@@ -405,7 +536,9 @@ select {
   }
 
   .status-grid,
-  .panel-row {
+  .panel-row,
+  .connection-strip,
+  .scan-summary {
     grid-template-columns: 1fr;
   }
 
@@ -422,7 +555,9 @@ select {
 
   .toolbar,
   .subscription-form,
-  .health-actions {
+  .health-actions,
+  .proxy-actions,
+  .log-controls {
     width: 100%;
     flex-direction: column;
   }
@@ -436,8 +571,16 @@ select {
     width: 100%;
   }
 
+  .proxy-actions input,
+  .proxy-actions select,
+  .log-controls input,
+  .log-controls select {
+    max-width: none;
+    width: 100%;
+  }
+
   .health-row {
-    grid-template-columns: minmax(110px, 1fr) 64px 78px 64px;
+    grid-template-columns: minmax(100px, 1fr) 56px 74px 58px 68px;
     gap: 8px;
     font-size: 12px;
   }

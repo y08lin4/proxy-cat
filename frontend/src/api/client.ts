@@ -27,6 +27,13 @@ export type LogLine = {
   message: string;
 };
 
+export type ConnectionStatus = {
+  coreRunning: boolean;
+  uploadTotal: number;
+  downloadTotal: number;
+  connectionCount: number;
+};
+
 export type AutoStableNodeHealth = {
   name: string;
   type?: string;
@@ -78,6 +85,7 @@ type WailsApp = {
   LoadSubscription(url: string): Promise<void>;
   GetProxyGroups(): Promise<ProxyGroupView[]>;
   SelectProxy(groupName: string, proxyName: string): Promise<void>;
+  GetConnectionStatus(): Promise<ConnectionStatus>;
   GetLogs(limit: number): Promise<LogLine[]>;
   GetAutoStableStatus(): Promise<AutoStableStatus>;
   SetAutoStableEnabled(enabled: boolean): Promise<void>;
@@ -133,6 +141,10 @@ export async function getProxyGroups(): Promise<ProxyGroupView[]> {
 
 export async function selectProxy(groupName: string, proxyName: string): Promise<void> {
   return app().SelectProxy(groupName, proxyName);
+}
+
+export async function getConnectionStatus(): Promise<ConnectionStatus> {
+  return app().GetConnectionStatus();
 }
 
 export async function getLogs(limit = 100): Promise<LogLine[]> {
