@@ -1,0 +1,23 @@
+# Build output
+/build/bin/
+/dist/
+/frontend/dist/
+
+# Runtime data
+/data/
+/logs/
+/*.log
+
+# Go
+/coverage.out
+
+# Node
+/frontend/node_modules/
+/frontend/.vite/
+
+# Local tools and IDEs
+/.idea/
+/.vscode/
+*.swp
+*.tmp
+
