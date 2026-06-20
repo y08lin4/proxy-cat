@@ -7,6 +7,7 @@ import {
   ConnectionStatus,
   LogLine,
   ProxyGroupView,
+  ProxyView,
   getAutoStableStatus,
   getConnectionStatus,
   getLogs,
@@ -44,14 +45,15 @@ const emptyConnection: ConnectionStatus = {
   connectionCount: 0
 };
 
-type ViewId = "overview" | "proxies" | "auto" | "logs" | "settings";
+type ViewId = "connection" | "subscription" | "nodes" | "groups" | "auto" | "diagnostics";
 
-const navItems: Array<{ id: ViewId; label: string; mark: string }> = [
-  { id: "overview", label: "概览", mark: "览" },
-  { id: "proxies", label: "代理", mark: "代" },
-  { id: "auto", label: "自动选择", mark: "稳" },
-  { id: "logs", label: "日志", mark: "志" },
-  { id: "settings", label: "设置", mark: "设" }
+const navItems: Array<{ id: ViewId; label: string; description: string }> = [
+  { id: "connection", label: "连接", description: "启动、断开、看当前出口" },
+  { id: "subscription", label: "订阅", description: "加载配置来源" },
+  { id: "nodes", label: "节点", description: "查看节点状态" },
+  { id: "groups", label: "代理组", description: "手动切换分组" },
+  { id: "auto", label: "自动选择", description: "稳定优先策略" },
+  { id: "diagnostics", label: "诊断", description: "定位连接问题" }
 ];
 
 export default function App() {
@@ -61,35 +63,49 @@ export default function App() {
   const [groups, setGroups] = useState<ProxyGroupView[]>([]);
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [subscriptionUrl, setSubscriptionUrl] = useState("");
-  const [autoStableGroup, setAutoStableGroup] = useState("AUTO-STABLE");
-  const [proxyQuery, setProxyQuery] = useState("");
-  const [proxyView, setProxyView] = useState<"all" | "selected" | "auto">("all");
-  const [logLevel, setLogLevel] = useState("all");
-  const [logQuery, setLogQuery] = useState("");
-  const [activeView, setActiveView] = useState<ViewId>("overview");
+  const [activeView, setActiveView] = useState<ViewId>("connection");
+  const [selectedGroupName, setSelectedGroupName] = useState("");
+  const [autoStableGroupName, setAutoStableGroupName] = useState("AUTO-STABLE");
+  const [nodeQuery, setNodeQuery] = useState("");
   const [busy, setBusy] = useState(false);
-  const [healthBusy, setHealthBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const hasProfile = groups.length > 0 || Boolean(status.activeProfileName);
+  const connected = status.coreRunning && status.systemProxyEnabled;
 
   async function refresh() {
     try {
       const [nextStatus, nextGroups, nextLogs, nextAutoStable, nextConnection] = await Promise.all([
         getStatus(),
         getProxyGroups(),
-        getLogs(80),
+        getLogs(120),
         getAutoStableStatus(),
         getConnectionStatus()
       ]);
       const normalizedStatus = normalizeAppStatus(nextStatus);
+      const normalizedGroups = normalizeGroups(nextGroups);
       const normalizedAutoStable = normalizeAutoStable(nextAutoStable);
       setStatus(normalizedStatus);
-      setGroups(normalizeGroups(nextGroups));
+      setGroups(normalizedGroups);
       setLogs(normalizeLogs(nextLogs));
       setAutoStable(normalizedAutoStable);
       setConnection(normalizeConnection(nextConnection));
       setError(normalizedStatus.lastError || normalizedAutoStable.lastError || null);
+      syncSelectedGroups(normalizedGroups, normalizedAutoStable);
     } catch (err) {
       setError(toMessage(err));
+    }
+  }
+
+  function syncSelectedGroups(nextGroups: ProxyGroupView[], nextAutoStable: AutoStableStatus) {
+    if (nextGroups.length > 0) {
+      setSelectedGroupName((current) => current && nextGroups.some((group) => group.name === current) ? current : nextGroups[0].name);
+    }
+    const autoGroups = findAutoStableGroups(nextGroups);
+    const healthGroups = nextAutoStable.health.map((group) => group.name);
+    const candidates = autoGroups.map((group) => group.name).concat(healthGroups);
+    if (candidates.length > 0) {
+      setAutoStableGroupName((current) => current && candidates.includes(current) ? current : candidates[0]);
     }
   }
 
@@ -107,16 +123,29 @@ export default function App() {
     }
   }
 
-  async function refreshHealth() {
-    setHealthBusy(true);
-    setError(null);
-    try {
-      setAutoStable(await getAutoStableStatus());
-    } catch (err) {
-      setError(toMessage(err));
-    } finally {
-      setHealthBusy(false);
+  async function connect() {
+    if (!hasProfile) {
+      setError("请先在“订阅”中加载节点订阅");
+      setActiveView("subscription");
+      return;
     }
+    await run(async () => {
+      if (!status.coreRunning) {
+        await startCore();
+      }
+      await setSystemProxy(true);
+    });
+  }
+
+  async function disconnect() {
+    await run(async () => {
+      if (status.systemProxyEnabled) {
+        await setSystemProxy(false);
+      }
+      if (status.coreRunning) {
+        await stopCore();
+      }
+    });
   }
 
   async function submitSubscription(event: FormEvent<HTMLFormElement>) {
@@ -126,7 +155,10 @@ export default function App() {
       setError("请输入订阅地址");
       return;
     }
-    await run(() => loadSubscription(url));
+    await run(async () => {
+      await loadSubscription(url);
+    });
+    setActiveView("connection");
   }
 
   useEffect(() => {
@@ -135,498 +167,382 @@ export default function App() {
     return () => window.clearInterval(id);
   }, []);
 
-  const selectedNodes = useMemo(
-    () => groups.filter((group) => group.selected).map((group) => `${group.name}：${group.selected}`),
-    [groups]
+  const selectedGroup = useMemo(
+    () => groups.find((group) => group.name === selectedGroupName) || groups[0],
+    [groups, selectedGroupName]
   );
-  const autoStableGroups = useMemo(
-    () => groups.filter((group) => group.type === "auto-stable" || group.name.toLowerCase().includes("stable")),
-    [groups]
-  );
+  const nodeRows = useMemo(() => filterNodeRows(flattenNodes(groups), nodeQuery), [groups, nodeQuery]);
+  const autoGroups = useMemo(() => findAutoStableGroups(groups), [groups]);
   const healthRows = useMemo(
     () => flattenHealth(autoStable.health).sort((left, right) => healthScore(left.node) - healthScore(right.node)),
     [autoStable.health]
   );
   const healthSummary = useMemo(() => summarizeHealth(healthRows), [healthRows]);
-  const filteredGroups = useMemo(
-    () => filterGroups(groups, proxyQuery, proxyView),
-    [groups, proxyQuery, proxyView]
-  );
-  const logLevels = useMemo(() => uniqueLogLevels(logs), [logs]);
-  const filteredLogs = useMemo(
-    () => filterLogs(logs, logLevel, logQuery),
-    [logs, logLevel, logQuery]
-  );
-  const activeGroup = useMemo(
-    () => groups.find((group) => group.name === autoStableGroup) || autoStableGroups[0] || groups[0],
-    [autoStableGroup, autoStableGroups, groups]
-  );
-
-  useEffect(() => {
-    if (autoStableGroups.length > 0 && !autoStableGroups.some((group) => group.name === autoStableGroup)) {
-      setAutoStableGroup(autoStableGroups[0].name);
-    }
-  }, [autoStableGroup, autoStableGroups]);
+  const recentErrorLogs = useMemo(() => logs.filter((line) => isErrorLevel(line.level)).slice(0, 8), [logs]);
 
   return (
-    <main className="app-shell">
-      <aside className="side-rail" aria-label="主导航">
-        <div className="brand-block">
-          <div className="cat-mark">PC</div>
-          <div>
-            <h1>Proxy-Cat</h1>
-            <p>更稳定的 Mihomo 客户端</p>
-          </div>
+    <main className="pc-shell">
+      <aside className="pc-sidebar" aria-label="主导航">
+        <div className="pc-brand">
+          <strong>Proxy-Cat</strong>
+          <span>Mihomo 代理客户端</span>
         </div>
 
-        <nav className="nav-stack">
+        <nav className="pc-nav">
           {navItems.map((item) => (
             <button
-              className={activeView === item.id ? "nav-item active" : "nav-item"}
+              className={activeView === item.id ? "pc-nav-item active" : "pc-nav-item"}
               key={item.id}
               onClick={() => setActiveView(item.id)}
               type="button"
             >
-              <span>{item.mark}</span>
-              {item.label}
+              <strong>{item.label}</strong>
+              <span>{item.description}</span>
             </button>
           ))}
         </nav>
 
-        <div className="rail-footer">
-          <span className={status.coreRunning ? "soft-pill online" : "soft-pill"}>{status.coreRunning ? "内核运行中" : "内核未启动"}</span>
-          <small>{status.controllerAddress}</small>
+        <div className="pc-sidebar-status">
+          <StatusBadge tone={connected ? "good" : status.coreRunning ? "warn" : "neutral"}>
+            {connected ? "已连接" : status.coreRunning ? "内核运行" : "未连接"}
+          </StatusBadge>
+          <span>{status.controllerAddress}</span>
         </div>
       </aside>
 
-      <section className="workspace">
-        <header className="topbar">
+      <section className="pc-main">
+        <header className="pc-topbar">
           <div>
-            <p>当前配置</p>
-            <h2>{status.activeProfileName || "未加载订阅"}</h2>
+            <p>{currentTitle(activeView)}</p>
+            <h1>{currentDescription(activeView)}</h1>
           </div>
-          <div className="top-actions">
-            <button className="ghost-button" disabled={busy} onClick={refresh} type="button">刷新</button>
-            <button className="ghost-button" disabled={busy || !status.coreRunning} onClick={() => run(stopCore)} type="button">停止</button>
-            <button className="ghost-button" disabled={busy} onClick={() => run(restartCore)} type="button">重启</button>
-            <button className="primary-button" disabled={busy || status.coreRunning} onClick={() => run(startCore)} type="button">启动内核</button>
+          <div className="pc-top-actions">
+            <button className="secondary" disabled={busy} onClick={refresh} type="button">刷新</button>
+            <button className="secondary" disabled={busy || !status.coreRunning} onClick={() => run(restartCore)} type="button">重启内核</button>
+            <button
+              className={connected ? "danger" : "primary"}
+              disabled={busy}
+              onClick={hasProfile ? (connected ? disconnect : connect) : () => setActiveView("subscription")}
+              type="button"
+            >
+              {hasProfile ? (connected ? "断开连接" : "连接") : "添加订阅"}
+            </button>
           </div>
         </header>
 
-        {error ? <div className="notice error">{error}</div> : null}
+        {error ? <Alert tone="error" title="当前错误" message={error} /> : null}
 
-        <section className="content-grid">
-          <div className="main-column">
-            {activeView === "overview" ? (
-              <OverviewView
-                autoStable={autoStable}
-                connection={connection}
-                groups={groups}
-                healthSummary={healthSummary}
-                logs={logs}
-                selectedNodes={selectedNodes}
-                status={status}
-              />
-            ) : null}
-
-            {activeView === "proxies" ? (
-              <ProxyViewPanel
-                busy={busy}
-                filteredGroups={filteredGroups}
-                groups={groups}
-                proxyQuery={proxyQuery}
-                proxyView={proxyView}
-                setProxyQuery={setProxyQuery}
-                setProxyView={setProxyView}
-                select={(groupName, proxyName) => run(() => selectProxy(groupName, proxyName))}
-              />
-            ) : null}
-
-            {activeView === "auto" ? (
-              <AutoStableView
-                activeGroup={activeGroup}
-                autoStable={autoStable}
-                autoStableGroup={autoStableGroup}
-                autoStableGroups={autoStableGroups}
-                busy={busy}
-                healthBusy={healthBusy}
-                healthRows={healthRows}
-                healthSummary={healthSummary}
-                refreshHealth={refreshHealth}
-                runTick={() => run(async () => {
-                  await runAutoStableTick();
-                })}
-                setAutoStableGroup={setAutoStableGroup}
-                toggle={(enabled) => run(() => setAutoStableEnabled(enabled))}
-              />
-            ) : null}
-
-            {activeView === "logs" ? (
-              <LogsView
-                filteredLogs={filteredLogs}
-                logLevel={logLevel}
-                logLevels={logLevels}
-                logQuery={logQuery}
-                logs={logs}
-                setLogLevel={setLogLevel}
-                setLogQuery={setLogQuery}
-              />
-            ) : null}
-
-            {activeView === "settings" ? (
-              <SettingsView
-                autoStable={autoStable}
-                busy={busy}
-                status={status}
-                subscriptionUrl={subscriptionUrl}
-                setSubscriptionUrl={setSubscriptionUrl}
-                submitSubscription={submitSubscription}
-                toggleAuto={(enabled) => run(() => setAutoStableEnabled(enabled))}
-                toggleSystemProxy={(enabled) => run(() => setSystemProxy(enabled))}
-              />
-            ) : null}
-          </div>
-
-          <ContextPanel
+        {activeView === "connection" ? (
+          <ConnectionView
             autoStable={autoStable}
             busy={busy}
+            connected={connected}
             connection={connection}
             groups={groups}
+            hasProfile={hasProfile}
             healthSummary={healthSummary}
-            logs={logs}
-            selectedNodes={selectedNodes}
+            onConnect={connect}
+            onDisconnect={disconnect}
+            onGoSubscription={() => setActiveView("subscription")}
             status={status}
-            start={() => run(startCore)}
-            stop={() => run(stopCore)}
-            restart={() => run(restartCore)}
-            toggleAuto={(enabled) => run(() => setAutoStableEnabled(enabled))}
-            toggleSystemProxy={(enabled) => run(() => setSystemProxy(enabled))}
           />
-        </section>
+        ) : null}
+
+        {activeView === "subscription" ? (
+          <SubscriptionView
+            busy={busy}
+            groups={groups}
+            onSubmit={submitSubscription}
+            setSubscriptionUrl={setSubscriptionUrl}
+            status={status}
+            subscriptionUrl={subscriptionUrl}
+          />
+        ) : null}
+
+        {activeView === "nodes" ? (
+          <NodesView nodeQuery={nodeQuery} nodeRows={nodeRows} setNodeQuery={setNodeQuery} />
+        ) : null}
+
+        {activeView === "groups" ? (
+          <GroupsView
+            busy={busy}
+            groups={groups}
+            onSelect={(groupName, proxyName) => run(() => selectProxy(groupName, proxyName))}
+            selectedGroup={selectedGroup}
+            selectedGroupName={selectedGroupName}
+            setSelectedGroupName={setSelectedGroupName}
+          />
+        ) : null}
+
+        {activeView === "auto" ? (
+          <AutoStableView
+            autoGroups={autoGroups}
+            autoStable={autoStable}
+            busy={busy}
+            healthRows={healthRows}
+            healthSummary={healthSummary}
+            selectedGroupName={autoStableGroupName}
+            setSelectedGroupName={setAutoStableGroupName}
+            toggleAuto={(enabled) => run(() => setAutoStableEnabled(enabled))}
+            runTick={() => run(async () => {
+              await runAutoStableTick();
+            })}
+          />
+        ) : null}
+
+        {activeView === "diagnostics" ? (
+          <DiagnosticsView
+            autoStable={autoStable}
+            connection={connection}
+            error={error}
+            groups={groups}
+            logs={logs}
+            recentErrorLogs={recentErrorLogs}
+            status={status}
+          />
+        ) : null}
       </section>
     </main>
   );
 }
 
-function ContextPanel(props: {
+function ConnectionView(props: {
   autoStable: AutoStableStatus;
   busy: boolean;
+  connected: boolean;
   connection: ConnectionStatus;
   groups: ProxyGroupView[];
+  hasProfile: boolean;
   healthSummary: ReturnType<typeof summarizeHealth>;
-  logs: LogLine[];
-  selectedNodes: string[];
+  onConnect(): void;
+  onDisconnect(): void;
+  onGoSubscription(): void;
   status: AppStatus;
-  start(): void;
-  stop(): void;
-  restart(): void;
-  toggleAuto(enabled: boolean): void;
-  toggleSystemProxy(enabled: boolean): void;
 }) {
+  const selected = selectedNodes(props.groups);
+  const currentExit = selected[0] || "暂无";
+
   return (
-    <aside className="context-column" aria-label="运行状态">
-      <section className="context-card depth-card">
-        <div className="context-head">
-          <span className={props.status.coreRunning ? "state-chip good" : "state-chip"}>{props.status.coreRunning ? "运行中" : "未启动"}</span>
-          <strong>运行控制</strong>
+    <div className="pc-stack">
+      <section className="pc-connection-panel">
+        <div>
+          <StatusBadge tone={props.connected ? "good" : props.status.coreRunning ? "warn" : "neutral"}>
+            {props.connected ? "已连接" : props.status.coreRunning ? "内核运行，系统代理未开启" : "未连接"}
+          </StatusBadge>
+          <h2>{props.hasProfile ? (props.connected ? "代理已经接管系统流量" : "连接后开始代理") : "加载订阅后开始代理"}</h2>
+          <p>
+            {props.hasProfile
+              ? `当前订阅：${props.status.activeProfileName || "默认订阅"}`
+              : "还没有订阅，请先加载节点订阅。"}
+          </p>
         </div>
-        <div className="control-grid">
-          <button className="primary-button" disabled={props.busy || props.status.coreRunning} onClick={props.start} type="button">启动</button>
-          <button className="ghost-button" disabled={props.busy || !props.status.coreRunning} onClick={props.stop} type="button">停止</button>
-          <button className="ghost-button" disabled={props.busy} onClick={props.restart} type="button">重启</button>
-        </div>
-      </section>
-
-      <section className="context-card">
-        <PanelTitle title="实时状态" meta={props.status.controllerAddress} />
-        <div className="status-rows">
-          <StatusLine label="系统代理" value={props.status.systemProxyEnabled ? "已开启" : "未开启"} good={props.status.systemProxyEnabled} />
-          <StatusLine label="自动选择" value={props.autoStable.enabled ? "已开启" : "未开启"} good={props.autoStable.enabled} />
-          <StatusLine label="连接数" value={`${props.connection.connectionCount}`} good={props.connection.connectionCount > 0} />
-          <StatusLine label="代理组" value={`${props.groups.length} 个`} good={props.groups.length > 0} />
-        </div>
-      </section>
-
-      <section className="context-card">
-        <PanelTitle title="快捷开关" meta="本机" />
-        <div className="toggle-list compact">
-          <label className="switch-card">
-            <span>系统代理</span>
-            <input
-              checked={props.status.systemProxyEnabled}
-              disabled={props.busy}
-              onChange={(event) => props.toggleSystemProxy(event.target.checked)}
-              type="checkbox"
-            />
-          </label>
-          <label className="switch-card">
-            <span>自动选择</span>
-            <input
-              checked={props.autoStable.enabled}
-              disabled={props.busy || !props.autoStable.available}
-              onChange={(event) => props.toggleAuto(event.target.checked)}
-              type="checkbox"
-            />
-          </label>
-        </div>
-      </section>
-
-      <section className="context-card">
-        <PanelTitle title="当前出口" meta={`${props.selectedNodes.length} 项`} />
-        <div className="context-list">
-          {props.selectedNodes.length === 0 ? (
-            <span>暂无已选择分组</span>
+        <div className="pc-primary-action">
+          {props.hasProfile ? (
+            <button className={props.connected ? "danger large" : "primary large"} disabled={props.busy} onClick={props.connected ? props.onDisconnect : props.onConnect} type="button">
+              {props.connected ? "断开连接" : "连接"}
+            </button>
           ) : (
-            props.selectedNodes.slice(0, 4).map((item) => <span key={item}>{item}</span>)
+            <button className="primary large" disabled={props.busy} onClick={props.onGoSubscription} type="button">添加订阅</button>
           )}
         </div>
       </section>
 
-      <section className="context-card">
-        <PanelTitle title="稳定性" meta={props.healthSummary.bestNode || "暂无"} />
-        <div className="status-rows">
-          <StatusLine label="健康节点" value={`${props.healthSummary.healthy}/${props.healthSummary.total}`} good={props.healthSummary.healthy > 0} />
-          <StatusLine label="平均延迟" value={props.healthSummary.averageLatency ? `${props.healthSummary.averageLatency} ms` : "暂无"} />
-          <StatusLine label="最近日志" value={`${props.logs.length} 条`} />
-        </div>
-      </section>
-    </aside>
-  );
-}
-
-function StatusLine(props: { label: string; value: string; good?: boolean }) {
-  return (
-    <div className={props.good ? "status-line good" : "status-line"}>
-      <span>{props.label}</span>
-      <strong>{props.value}</strong>
-    </div>
-  );
-}
-
-function OverviewView(props: {
-  autoStable: AutoStableStatus;
-  connection: ConnectionStatus;
-  groups: ProxyGroupView[];
-  healthSummary: ReturnType<typeof summarizeHealth>;
-  logs: LogLine[];
-  selectedNodes: string[];
-  status: AppStatus;
-}) {
-  const connectionLabel = props.connection.coreRunning
-    ? props.connection.connectionCount > 0 ? "连接活跃" : "内核就绪"
-    : "离线";
-
-  return (
-    <div className="view-stack">
-      <section className="hero-panel">
-        <div className="hero-copy">
-          <span className={props.status.coreRunning ? "state-chip good" : "state-chip"}>{connectionLabel}</span>
-          <h3>{props.status.coreRunning ? "代理服务已准备好" : "启动内核后开始代理"}</h3>
-          <p>加载订阅、开启系统代理，再让自动稳定选择帮你减少手动切换。</p>
-        </div>
-        <div className="hero-metrics">
-          <Metric label="连接数" value={`${props.connection.connectionCount}`} />
-          <Metric label="下载" value={formatBytes(props.connection.downloadTotal)} />
-          <Metric label="上传" value={formatBytes(props.connection.uploadTotal)} />
+      <section className="pc-section">
+        <SectionTitle title="当前状态" meta="连接视图只保留必要信息" />
+        <div className="pc-status-grid">
+          <StatusMetric label="Mihomo 内核" value={props.status.coreRunning ? "运行中" : "未启动"} tone={props.status.coreRunning ? "good" : "neutral"} />
+          <StatusMetric label="Windows 系统代理" value={props.status.systemProxyEnabled ? "已开启" : "未开启"} tone={props.status.systemProxyEnabled ? "good" : "neutral"} />
+          <StatusMetric label="当前出口" value={currentExit} tone={currentExit === "暂无" ? "neutral" : "good"} />
+          <StatusMetric label="连接数" value={`${props.connection.connectionCount}`} tone={props.connection.connectionCount > 0 ? "good" : "neutral"} />
         </div>
       </section>
 
-      <section className="quick-grid">
-        <StatusTile label="内核" value={props.status.coreRunning ? "运行中" : "未启动"} tone={props.status.coreRunning ? "good" : "muted"} />
-        <StatusTile label="系统代理" value={props.status.systemProxyEnabled ? "已开启" : "未开启"} tone={props.status.systemProxyEnabled ? "good" : "muted"} />
-        <StatusTile label="自动选择" value={props.autoStable.enabled ? "已开启" : "未开启"} tone={props.autoStable.enabled ? "good" : "muted"} />
-        <StatusTile label="代理组" value={`${props.groups.length} 个`} tone={props.groups.length > 0 ? "good" : "muted"} />
+      <section className="pc-section">
+        <SectionTitle title="自动选择" meta={props.autoStable.available ? "可用" : "未就绪"} />
+        <div className="pc-two-column">
+          <StatusMetric label="稳定优先" value={props.autoStable.enabled ? "已开启" : "未开启"} tone={props.autoStable.enabled ? "good" : "neutral"} />
+          <StatusMetric label="最佳节点" value={props.healthSummary.bestNode || "暂无检测"} tone={props.healthSummary.bestNode ? "good" : "neutral"} />
+        </div>
       </section>
 
-      <section className="dashboard-grid">
-        <article className="panel surface">
-          <PanelTitle title="当前选择" meta={`${props.selectedNodes.length} 个分组`} />
-          <div className="selected-list">
-            {props.selectedNodes.length === 0 ? (
-              <EmptyState text="还没有已选择的代理组" />
-            ) : (
-              props.selectedNodes.slice(0, 6).map((item) => <span key={item}>{item}</span>)
-            )}
+      <section className="pc-section">
+        <SectionTitle title="当前代理组选择" meta={`${selected.length} 个分组`} />
+        {selected.length === 0 ? (
+          <EmptyState title="暂无代理组" action="加载订阅后会显示当前出口" />
+        ) : (
+          <div className="pc-simple-list">
+            {selected.map((item) => <span key={item}>{item}</span>)}
           </div>
-        </article>
-
-        <article className="panel surface">
-          <PanelTitle title="稳定性摘要" meta={props.healthSummary.total > 0 ? "已有检测数据" : "等待检测"} />
-          <div className="summary-list">
-            <Metric label="最佳节点" value={props.healthSummary.bestNode || "暂无"} />
-            <Metric label="健康节点" value={`${props.healthSummary.healthy}/${props.healthSummary.total}`} />
-            <Metric label="平均延迟" value={props.healthSummary.averageLatency ? `${props.healthSummary.averageLatency} ms` : "暂无"} />
-          </div>
-        </article>
-
-        <article className="panel surface">
-          <PanelTitle title="最近日志" meta={`${props.logs.length} 条`} />
-          <div className="mini-log-list">
-            {props.logs.length === 0 ? (
-              <EmptyState text="暂无日志" />
-            ) : (
-              props.logs.slice(0, 5).map((line, index) => (
-                <div className="mini-log" key={`${line.time}-${index}`}>
-                  <span>{translateLogLevel(line.level)}</span>
-                  <p>{line.message}</p>
-                </div>
-              ))
-            )}
-          </div>
-        </article>
+        )}
       </section>
     </div>
   );
 }
 
-function ProxyViewPanel(props: {
+function SubscriptionView(props: {
   busy: boolean;
-  filteredGroups: ProxyGroupView[];
   groups: ProxyGroupView[];
-  proxyQuery: string;
-  proxyView: "all" | "selected" | "auto";
-  setProxyQuery(value: string): void;
-  setProxyView(value: "all" | "selected" | "auto"): void;
-  select(groupName: string, proxyName: string): void;
+  onSubmit(event: FormEvent<HTMLFormElement>): void;
+  setSubscriptionUrl(value: string): void;
+  status: AppStatus;
+  subscriptionUrl: string;
+}) {
+  const nodeCount = flattenNodes(props.groups).length;
+  return (
+    <div className="pc-stack">
+      <section className="pc-section">
+        <SectionTitle title="订阅地址" meta={props.status.activeProfileName || "未加载"} />
+        <form className="pc-form" onSubmit={props.onSubmit}>
+          <label>
+            <span>节点订阅 URL</span>
+            <input
+              autoComplete="off"
+              onChange={(event) => props.setSubscriptionUrl(event.target.value)}
+              placeholder="https://example.com/sub"
+              spellCheck={false}
+              type="url"
+              value={props.subscriptionUrl}
+            />
+          </label>
+          <button className="primary" disabled={props.busy} type="submit">加载订阅</button>
+        </form>
+      </section>
+
+      <section className="pc-section">
+        <SectionTitle title="解析结果" meta="用于判断配置是否可启动" />
+        <div className="pc-status-grid">
+          <StatusMetric label="配置名称" value={props.status.activeProfileName || "暂无"} tone={props.status.activeProfileName ? "good" : "neutral"} />
+          <StatusMetric label="代理组" value={`${props.groups.length}`} tone={props.groups.length > 0 ? "good" : "neutral"} />
+          <StatusMetric label="节点引用" value={`${nodeCount}`} tone={nodeCount > 0 ? "good" : "neutral"} />
+          <StatusMetric label="控制端口" value={props.status.controllerAddress} tone="neutral" />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function NodesView(props: {
+  nodeQuery: string;
+  nodeRows: NodeRow[];
+  setNodeQuery(value: string): void;
 }) {
   return (
-    <section className="panel full-panel">
-      <PanelTitle title="代理" meta={`${props.filteredGroups.length}/${props.groups.length} 个分组`} />
-      <div className="filter-bar">
-        <input
-          value={props.proxyQuery}
-          onChange={(event) => props.setProxyQuery(event.target.value)}
-          placeholder="搜索分组或节点"
-          spellCheck={false}
-        />
-        <select value={props.proxyView} onChange={(event) => props.setProxyView(event.target.value as "all" | "selected" | "auto")}>
-          <option value="all">全部分组</option>
-          <option value="selected">已选择</option>
-          <option value="auto">自动分组</option>
-        </select>
+    <section className="pc-section fill">
+      <SectionTitle title="节点" meta={`${props.nodeRows.length} 条`} />
+      <div className="pc-toolbar">
+        <label className="pc-search">
+          <span>搜索节点</span>
+          <input
+            onChange={(event) => props.setNodeQuery(event.target.value)}
+            placeholder="输入节点名、类型或分组"
+            spellCheck={false}
+            value={props.nodeQuery}
+          />
+        </label>
       </div>
-
-      {props.groups.length === 0 ? (
-        <EmptyState text="先在设置中加载订阅，随后这里会出现代理组和节点" />
-      ) : props.filteredGroups.length === 0 ? (
-        <EmptyState text="没有匹配当前筛选条件的代理组" />
+      {props.nodeRows.length === 0 ? (
+        <EmptyState title="暂无节点" action="加载订阅后会显示节点列表" />
       ) : (
-        <div className="proxy-grid">
-          {props.filteredGroups.map((group) => (
-            <article className="proxy-card" key={group.name}>
-              <div className="proxy-card-head">
-                <div>
-                  <h3>{group.name}</h3>
-                  <span>{translateGroupType(group.type)} · {group.proxies.length} 个节点</span>
-                </div>
-                <strong>{group.selected || "未选择"}</strong>
-              </div>
-              <div className="node-grid">
-                {group.proxies.map((proxy) => (
-                  <button
-                    className={proxy.name === group.selected ? "node-card active" : "node-card"}
-                    disabled={props.busy}
-                    key={proxy.name}
-                    onClick={() => props.select(group.name, proxy.name)}
-                    type="button"
-                  >
-                    <span>{proxy.name}</span>
-                    <small>{proxyMeta(proxy)}</small>
-                  </button>
-                ))}
-              </div>
-            </article>
-          ))}
+        <div className="pc-table-wrap">
+          <table className="pc-table">
+            <thead>
+              <tr>
+                <th>节点</th>
+                <th>分组</th>
+                <th>类型</th>
+                <th>延迟</th>
+                <th>状态</th>
+              </tr>
+            </thead>
+            <tbody>
+              {props.nodeRows.map((row) => (
+                <tr key={`${row.groupName}-${row.proxy.name}`}>
+                  <td>{row.proxy.name}</td>
+                  <td>{row.groupName}</td>
+                  <td>{row.proxy.type || "未知"}</td>
+                  <td>{formatLatency(row.proxy)}</td>
+                  <td><StatusBadge tone={row.proxy.alive ? "good" : "bad"}>{row.proxy.alive ? "可用" : "不可用"}</StatusBadge></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </section>
   );
 }
 
-function AutoStableView(props: {
-  activeGroup?: ProxyGroupView;
-  autoStable: AutoStableStatus;
-  autoStableGroup: string;
-  autoStableGroups: ProxyGroupView[];
+function GroupsView(props: {
   busy: boolean;
-  healthBusy: boolean;
-  healthRows: HealthRow[];
-  healthSummary: ReturnType<typeof summarizeHealth>;
-  refreshHealth(): Promise<void>;
-  runTick(): void;
-  setAutoStableGroup(value: string): void;
-  toggle(enabled: boolean): void;
+  groups: ProxyGroupView[];
+  onSelect(groupName: string, proxyName: string): void;
+  selectedGroup?: ProxyGroupView;
+  selectedGroupName: string;
+  setSelectedGroupName(value: string): void;
 }) {
   return (
-    <div className="view-stack">
-      <section className="panel auto-hero">
-        <div>
-          <span className={props.autoStable.enabled ? "state-chip good" : "state-chip"}>{props.autoStable.enabled ? "自动选择已开启" : "自动选择未开启"}</span>
-          <h3>稳定优先的节点选择</h3>
-          <p>按延迟与失败率评分，配合冷却机制减少反复切换。</p>
-        </div>
-        <label className="switch-card">
-          <span>启用自动选择</span>
-          <input
-            checked={props.autoStable.enabled}
-            disabled={props.busy || !props.autoStable.available}
-            onChange={(event) => props.toggle(event.target.checked)}
-            type="checkbox"
-          />
-        </label>
-      </section>
-
-      <section className="quick-grid">
-        <StatusTile label="最佳节点" value={props.healthSummary.bestNode || "暂无"} tone={props.healthSummary.bestNode ? "good" : "muted"} />
-        <StatusTile label="健康节点" value={`${props.healthSummary.healthy}/${props.healthSummary.total}`} tone={props.healthSummary.healthy > 0 ? "good" : "muted"} />
-        <StatusTile label="平均延迟" value={props.healthSummary.averageLatency ? `${props.healthSummary.averageLatency} ms` : "暂无"} tone="muted" />
-        <StatusTile label="失败次数" value={`${props.healthSummary.failures}`} tone={props.healthSummary.failures > 0 ? "warn" : "good"} />
-      </section>
-
-      <section className="panel full-panel">
-        <PanelTitle title="健康检测" meta={props.autoStable.running || props.healthBusy ? "检测中" : props.autoStable.lastTickAt ? formatRelativeTime(props.autoStable.lastTickAt) : "未检测"} />
-        <div className="filter-bar">
-          <select
-            value={props.autoStableGroup}
-            onChange={(event) => props.setAutoStableGroup(event.target.value)}
-            disabled={props.busy || props.autoStableGroups.length === 0}
-          >
-            {props.autoStableGroups.length === 0 ? (
-              <option value="AUTO-STABLE">AUTO-STABLE</option>
-            ) : (
-              props.autoStableGroups.map((group) => (
-                <option key={group.name} value={group.name}>{group.name}</option>
-              ))
-            )}
-          </select>
-          <button className="ghost-button" disabled={props.busy || props.healthBusy || !props.autoStable.available} onClick={props.refreshHealth} type="button">刷新检测</button>
-          <button className="primary-button" disabled={props.busy || props.healthBusy || !props.autoStable.available || !props.autoStable.enabled} onClick={props.runTick} type="button">立即选择</button>
-        </div>
-
-        {props.activeGroup ? (
-          <div className="active-group-strip">
-            <span>当前分组</span>
-            <strong>{props.activeGroup.name}</strong>
-            <small>{props.activeGroup.selected || "未选择"}</small>
-          </div>
-        ) : null}
-
-        {props.healthRows.length === 0 ? (
-          <EmptyState text={props.autoStable.available ? "暂无健康检测数据" : "加载订阅后会生成自动稳定分组"} />
+    <div className="pc-master-detail">
+      <section className="pc-section pc-master">
+        <SectionTitle title="代理组" meta={`${props.groups.length} 个`} />
+        {props.groups.length === 0 ? (
+          <EmptyState title="暂无代理组" action="加载订阅后会显示分组" />
         ) : (
-          <div className="health-list">
-            {props.healthRows.map((row) => (
-              <div className="health-item" key={`${row.groupName}-${row.node.name}`}>
-                <div>
-                  <strong>{row.node.name}</strong>
-                  <span>{row.groupName}</span>
-                </div>
-                <Metric label="评分" value={formatScore(row.node)} />
-                <Metric label="延迟" value={formatLatency(row.node)} />
-                <Metric label="失败率" value={formatFailureRate(row.node)} />
-                <Metric label="检测时间" value={formatRelativeTime(row.node.lastCheckedAt)} />
-              </div>
+          <div className="pc-group-list">
+            {props.groups.map((group) => (
+              <button
+                className={group.name === props.selectedGroupName ? "pc-group-row active" : "pc-group-row"}
+                key={group.name}
+                onClick={() => props.setSelectedGroupName(group.name)}
+                type="button"
+              >
+                <strong>{group.name}</strong>
+                <span>{translateGroupType(group.type)} · {group.selected || "未选择"}</span>
+              </button>
             ))}
+          </div>
+        )}
+      </section>
+
+      <section className="pc-section pc-detail">
+        <SectionTitle title={props.selectedGroup?.name || "选择一个代理组"} meta={props.selectedGroup ? translateGroupType(props.selectedGroup.type) : "无"} />
+        {!props.selectedGroup ? (
+          <EmptyState title="暂无节点" action="从左侧选择代理组" />
+        ) : (
+          <div className="pc-table-wrap">
+            <table className="pc-table">
+              <thead>
+                <tr>
+                  <th>节点</th>
+                  <th>类型</th>
+                  <th>状态</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {props.selectedGroup.proxies.map((proxy) => (
+                  <tr key={`${props.selectedGroup?.name}-${proxy.name}`}>
+                    <td>
+                      <div className="pc-node-name">
+                        <strong>{proxy.name}</strong>
+                        {proxy.name === props.selectedGroup?.selected ? <StatusBadge tone="good">当前</StatusBadge> : null}
+                      </div>
+                    </td>
+                    <td>{proxy.type || "未知"}</td>
+                    <td><StatusBadge tone={proxy.alive ? "good" : "bad"}>{proxy.alive ? "可用" : "不可用"}</StatusBadge></td>
+                    <td>
+                      <button
+                        className="secondary compact"
+                        disabled={props.busy || proxy.name === props.selectedGroup?.selected}
+                        onClick={() => props.selectedGroup && props.onSelect(props.selectedGroup.name, proxy.name)}
+                        type="button"
+                      >
+                        选择
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </section>
@@ -634,148 +550,276 @@ function AutoStableView(props: {
   );
 }
 
-function LogsView(props: {
-  filteredLogs: LogLine[];
-  logLevel: string;
-  logLevels: string[];
-  logQuery: string;
-  logs: LogLine[];
-  setLogLevel(value: string): void;
-  setLogQuery(value: string): void;
-}) {
-  return (
-    <section className="panel full-panel">
-      <PanelTitle title="日志" meta={`${props.filteredLogs.length}/${props.logs.length} 条`} />
-      <div className="filter-bar">
-        <select value={props.logLevel} onChange={(event) => props.setLogLevel(event.target.value)}>
-          <option value="all">全部级别</option>
-          {props.logLevels.map((level) => (
-            <option key={level} value={level}>{translateLogLevel(level)}</option>
-          ))}
-        </select>
-        <input
-          value={props.logQuery}
-          onChange={(event) => props.setLogQuery(event.target.value)}
-          placeholder="筛选日志内容"
-          spellCheck={false}
-        />
-        <button
-          className="ghost-button"
-          disabled={props.logLevel === "all" && props.logQuery.length === 0}
-          onClick={() => {
-            props.setLogLevel("all");
-            props.setLogQuery("");
-          }}
-          type="button"
-        >
-          清空
-        </button>
-      </div>
-      <div className="log-list">
-        {props.logs.length === 0 ? (
-          <EmptyState text="暂无日志" />
-        ) : props.filteredLogs.length === 0 ? (
-          <EmptyState text="没有匹配的日志" />
-        ) : (
-          props.filteredLogs.map((line, index) => (
-            <div className={`log-line ${logTone(line.level)}`} key={`${line.time}-${index}`}>
-              <time>{formatClock(line.time)}</time>
-              <span>{translateLogLevel(line.level)}</span>
-              <p>{line.message}</p>
-            </div>
-          ))
-        )}
-      </div>
-    </section>
-  );
-}
-
-function SettingsView(props: {
+function AutoStableView(props: {
+  autoGroups: ProxyGroupView[];
   autoStable: AutoStableStatus;
   busy: boolean;
-  status: AppStatus;
-  subscriptionUrl: string;
-  setSubscriptionUrl(value: string): void;
-  submitSubscription(event: FormEvent<HTMLFormElement>): void;
+  healthRows: HealthRow[];
+  healthSummary: ReturnType<typeof summarizeHealth>;
+  selectedGroupName: string;
+  setSelectedGroupName(value: string): void;
   toggleAuto(enabled: boolean): void;
-  toggleSystemProxy(enabled: boolean): void;
+  runTick(): void;
 }) {
-  return (
-    <div className="settings-layout">
-      <section className="panel">
-        <PanelTitle title="订阅" meta={props.status.activeProfileName || "未加载"} />
-        <form className="subscription-form" onSubmit={props.submitSubscription}>
-          <input
-            value={props.subscriptionUrl}
-            onChange={(event) => props.setSubscriptionUrl(event.target.value)}
-            placeholder="输入订阅地址"
-            spellCheck={false}
-          />
-          <button className="primary-button" disabled={props.busy} type="submit">加载订阅</button>
-        </form>
-      </section>
+  const availableGroups = props.autoGroups.map((group) => group.name);
+  const healthGroups = Array.from(new Set(props.healthRows.map((row) => row.groupName)));
+  const groupOptions = Array.from(new Set(availableGroups.concat(healthGroups)));
+  const rows = props.selectedGroupName
+    ? props.healthRows.filter((row) => row.groupName === props.selectedGroupName)
+    : props.healthRows;
 
-      <section className="panel">
-        <PanelTitle title="开关" meta="本机代理" />
-        <div className="toggle-list">
-          <label className="switch-card">
-            <span>Windows 系统代理</span>
-            <input
-              checked={props.status.systemProxyEnabled}
-              disabled={props.busy}
-              onChange={(event) => props.toggleSystemProxy(event.target.checked)}
-              type="checkbox"
-            />
-          </label>
-          <label className="switch-card">
-            <span>自动稳定选择</span>
+  return (
+    <div className="pc-stack">
+      <section className="pc-section">
+        <SectionTitle title="稳定优先" meta={props.autoStable.available ? "可用" : "订阅加载后可用"} />
+        <div className="pc-action-row">
+          <label className="pc-toggle">
             <input
               checked={props.autoStable.enabled}
               disabled={props.busy || !props.autoStable.available}
               onChange={(event) => props.toggleAuto(event.target.checked)}
               type="checkbox"
             />
+            <span>启用自动稳定选择</span>
+          </label>
+          <button className="primary" disabled={props.busy || !props.autoStable.enabled || !props.autoStable.available} onClick={props.runTick} type="button">
+            立即选择一次
+          </button>
+        </div>
+      </section>
+
+      <section className="pc-section">
+        <SectionTitle title="评分摘要" meta="score = latency + failure_rate" />
+        <div className="pc-status-grid">
+          <StatusMetric label="最佳节点" value={props.healthSummary.bestNode || "暂无"} tone={props.healthSummary.bestNode ? "good" : "neutral"} />
+          <StatusMetric label="健康节点" value={`${props.healthSummary.healthy}/${props.healthSummary.total}`} tone={props.healthSummary.healthy > 0 ? "good" : "neutral"} />
+          <StatusMetric label="平均延迟" value={props.healthSummary.averageLatency ? `${props.healthSummary.averageLatency} ms` : "暂无"} tone="neutral" />
+          <StatusMetric label="最近动作" value={props.autoStable.lastAction || "暂无"} tone="neutral" />
+        </div>
+      </section>
+
+      <section className="pc-section fill">
+        <SectionTitle title="健康检测" meta={props.autoStable.lastTickAt ? formatRelativeTime(props.autoStable.lastTickAt) : "未检测"} />
+        <div className="pc-toolbar">
+          <label>
+            <span>代理组</span>
+            <select
+              disabled={groupOptions.length === 0}
+              onChange={(event) => props.setSelectedGroupName(event.target.value)}
+              value={props.selectedGroupName}
+            >
+              {groupOptions.length === 0 ? <option value="AUTO-STABLE">AUTO-STABLE</option> : null}
+              {groupOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
           </label>
         </div>
+        {rows.length === 0 ? (
+          <EmptyState title="暂无检测数据" action="开启自动选择后会显示节点健康数据" />
+        ) : (
+          <div className="pc-table-wrap">
+            <table className="pc-table">
+              <thead>
+                <tr>
+                  <th>节点</th>
+                  <th>评分</th>
+                  <th>延迟</th>
+                  <th>失败率</th>
+                  <th>检测时间</th>
+                  <th>状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={`${row.groupName}-${row.node.name}`}>
+                    <td>{row.node.name}</td>
+                    <td>{formatScore(row.node)}</td>
+                    <td>{formatHealthLatency(row.node)}</td>
+                    <td>{formatFailureRate(row.node)}</td>
+                    <td>{formatRelativeTime(row.node.lastCheckedAt)}</td>
+                    <td><StatusBadge tone={row.node.alive ? "good" : "bad"}>{row.node.alive ? "可用" : "失败"}</StatusBadge></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </div>
   );
 }
+
+function DiagnosticsView(props: {
+  autoStable: AutoStableStatus;
+  connection: ConnectionStatus;
+  error: string | null;
+  groups: ProxyGroupView[];
+  logs: LogLine[];
+  recentErrorLogs: LogLine[];
+  status: AppStatus;
+}) {
+  const checks = [
+    {
+      name: "订阅配置",
+      ok: props.groups.length > 0,
+      detail: props.groups.length > 0 ? `${props.groups.length} 个代理组已加载` : "未加载订阅"
+    },
+    {
+      name: "Mihomo 内核",
+      ok: props.status.coreRunning,
+      detail: props.status.coreRunning ? "正在运行" : "未启动"
+    },
+    {
+      name: "系统代理",
+      ok: props.status.systemProxyEnabled,
+      detail: props.status.systemProxyEnabled ? "Windows 代理已开启" : "Windows 代理未开启"
+    },
+    {
+      name: "控制端口",
+      ok: Boolean(props.status.controllerAddress),
+      detail: props.status.controllerAddress || "未配置"
+    },
+    {
+      name: "自动选择",
+      ok: props.autoStable.available,
+      detail: props.autoStable.available ? (props.autoStable.enabled ? "已开启" : "可用但未开启") : "订阅加载后可用"
+    }
+  ];
+
+  return (
+    <div className="pc-stack">
+      <section className="pc-section">
+        <SectionTitle title="诊断检查" meta={props.error ? "存在错误" : "暂无错误"} />
+        <div className="pc-check-list">
+          {checks.map((check) => (
+            <div className="pc-check-row" key={check.name}>
+              <StatusBadge tone={check.ok ? "good" : "warn"}>{check.ok ? "正常" : "待处理"}</StatusBadge>
+              <strong>{check.name}</strong>
+              <span>{check.detail}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="pc-section">
+        <SectionTitle title="运行数据" meta="Mihomo /connections" />
+        <div className="pc-status-grid">
+          <StatusMetric label="连接数" value={`${props.connection.connectionCount}`} tone="neutral" />
+          <StatusMetric label="下载" value={formatBytes(props.connection.downloadTotal)} tone="neutral" />
+          <StatusMetric label="上传" value={formatBytes(props.connection.uploadTotal)} tone="neutral" />
+          <StatusMetric label="日志数" value={`${props.logs.length}`} tone="neutral" />
+        </div>
+      </section>
+
+      <section className="pc-section fill">
+        <SectionTitle title="最近错误日志" meta={`${props.recentErrorLogs.length} 条`} />
+        {props.recentErrorLogs.length === 0 ? (
+          <EmptyState title="暂无错误日志" action="连接异常时这里会显示最近错误" />
+        ) : (
+          <LogList logs={props.recentErrorLogs} />
+        )}
+      </section>
+
+      <section className="pc-section fill">
+        <SectionTitle title="最近日志" meta={`${props.logs.length} 条`} />
+        {props.logs.length === 0 ? <EmptyState title="暂无日志" action="启动内核或加载订阅后会产生日志" /> : <LogList logs={props.logs.slice(0, 40)} />}
+      </section>
+    </div>
+  );
+}
+
+function LogList(props: { logs: LogLine[] }) {
+  return (
+    <div className="pc-log-list">
+      {props.logs.map((line, index) => (
+        <div className="pc-log-row" key={`${line.time}-${index}`}>
+          <time>{formatClock(line.time)}</time>
+          <StatusBadge tone={isErrorLevel(line.level) ? "bad" : isWarnLevel(line.level) ? "warn" : "neutral"}>
+            {translateLogLevel(line.level)}
+          </StatusBadge>
+          <span>{line.message}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SectionTitle(props: { title: string; meta?: string }) {
+  return (
+    <div className="pc-section-title">
+      <h2>{props.title}</h2>
+      {props.meta ? <span>{props.meta}</span> : null}
+    </div>
+  );
+}
+
+function Alert(props: { tone: "error" | "info"; title: string; message: string }) {
+  return (
+    <section className={`pc-alert ${props.tone}`}>
+      <strong>{props.title}</strong>
+      <span>{props.message}</span>
+    </section>
+  );
+}
+
+function StatusMetric(props: { label: string; value: string; tone: BadgeTone }) {
+  return (
+    <div className="pc-metric">
+      <span>{props.label}</span>
+      <strong title={props.value}>{props.value}</strong>
+      {props.tone === "neutral" ? null : <StatusBadge tone={props.tone}>{badgeText(props.tone)}</StatusBadge>}
+    </div>
+  );
+}
+
+type BadgeTone = "good" | "warn" | "bad" | "neutral";
+
+function StatusBadge(props: { tone: BadgeTone; children: string }) {
+  return <span className={`pc-badge ${props.tone}`}>{props.children}</span>;
+}
+
+function EmptyState(props: { title: string; action: string }) {
+  return (
+    <div className="pc-empty">
+      <strong>{props.title}</strong>
+      <span>{props.action}</span>
+    </div>
+  );
+}
+
+type NodeRow = {
+  groupName: string;
+  proxy: ProxyView;
+};
 
 type HealthRow = {
   groupName: string;
   node: AutoStableNodeHealth;
 };
 
-function PanelTitle(props: { title: string; meta: string }) {
-  return (
-    <div className="panel-title">
-      <h2>{props.title}</h2>
-      <span>{props.meta}</span>
-    </div>
+function flattenNodes(groups: ProxyGroupView[]): NodeRow[] {
+  return groups.flatMap((group) => group.proxies.map((proxy) => ({ groupName: group.name, proxy })));
+}
+
+function filterNodeRows(rows: NodeRow[], query: string): NodeRow[] {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return rows;
+  }
+  return rows.filter((row) =>
+    `${row.groupName} ${row.proxy.name} ${row.proxy.type || ""}`.toLowerCase().includes(normalized)
   );
 }
 
-function StatusTile(props: { label: string; value: string; tone: "good" | "muted" | "warn" }) {
-  return (
-    <article className={`status-tile ${props.tone}`}>
-      <span>{props.label}</span>
-      <strong title={props.value}>{props.value}</strong>
-    </article>
-  );
+function selectedNodes(groups: ProxyGroupView[]): string[] {
+  return groups.filter((group) => group.selected).map((group) => `${group.name}：${group.selected}`);
 }
 
-function Metric(props: { label: string; value: string }) {
-  return (
-    <div className="metric">
-      <span>{props.label}</span>
-      <strong title={props.value}>{props.value}</strong>
-    </div>
-  );
-}
-
-function EmptyState(props: { text: string }) {
-  return <div className="empty-state">{props.text}</div>;
+function findAutoStableGroups(groups: ProxyGroupView[]): ProxyGroupView[] {
+  return groups.filter((group) => {
+    const name = group.name.toLowerCase();
+    const type = group.type.toLowerCase();
+    return type.includes("auto") || name.includes("auto") || name.includes("stable") || name.includes("自动");
+  });
 }
 
 function flattenHealth(groups: AutoStableGroupHealth[]): HealthRow[] {
@@ -785,50 +829,6 @@ function flattenHealth(groups: AutoStableGroupHealth[]): HealthRow[] {
       node
     }))
   );
-}
-
-function filterGroups(groups: ProxyGroupView[], query: string, view: "all" | "selected" | "auto"): ProxyGroupView[] {
-  const normalized = query.trim().toLowerCase();
-  return groups.filter((group) => {
-    if (view === "selected" && !group.selected) {
-      return false;
-    }
-    if (view === "auto" && !isAutoGroup(group)) {
-      return false;
-    }
-    if (!normalized) {
-      return true;
-    }
-    return (
-      group.name.toLowerCase().includes(normalized) ||
-      group.type.toLowerCase().includes(normalized) ||
-      (group.selected || "").toLowerCase().includes(normalized) ||
-      group.proxies.some((proxy) => proxy.name.toLowerCase().includes(normalized))
-    );
-  });
-}
-
-function isAutoGroup(group: ProxyGroupView): boolean {
-  const name = group.name.toLowerCase();
-  const type = group.type.toLowerCase();
-  return type.includes("auto") || name.includes("auto") || name.includes("stable");
-}
-
-function uniqueLogLevels(logs: LogLine[]): string[] {
-  return Array.from(new Set(logs.map((line) => line.level).filter(Boolean))).sort((left, right) => left.localeCompare(right));
-}
-
-function filterLogs(logs: LogLine[], level: string, query: string): LogLine[] {
-  const normalized = query.trim().toLowerCase();
-  return logs.filter((line) => {
-    if (level !== "all" && line.level !== level) {
-      return false;
-    }
-    if (!normalized) {
-      return true;
-    }
-    return `${line.level} ${line.message}`.toLowerCase().includes(normalized);
-  });
 }
 
 function summarizeHealth(rows: HealthRow[]) {
@@ -856,7 +856,11 @@ function formatScore(row: AutoStableNodeHealth): string {
   return Number.isFinite(score) ? score.toFixed(0) : "暂无";
 }
 
-function formatLatency(row: AutoStableNodeHealth): string {
+function formatLatency(row: ProxyView): string {
+  return typeof row.latencyMs === "number" && row.latencyMs > 0 ? `${row.latencyMs} ms` : "暂无";
+}
+
+function formatHealthLatency(row: AutoStableNodeHealth): string {
   return typeof row.latencyMs === "number" && row.latencyMs > 0 ? `${row.latencyMs} ms` : "暂无";
 }
 
@@ -874,7 +878,7 @@ function formatRelativeTime(value?: string): string {
     return "暂无";
   }
   const time = new Date(value).getTime();
-  if (!Number.isFinite(time)) {
+  if (!Number.isFinite(time) || time <= 0) {
     return "暂无";
   }
   const seconds = Math.max(0, Math.round((Date.now() - time) / 1000));
@@ -932,31 +936,6 @@ function translateGroupType(type: string): string {
   return type || "分组";
 }
 
-function proxyMeta(proxy: { type?: string; latencyMs?: number; alive: boolean }): string {
-  const parts = [proxy.type || "节点"];
-  if (typeof proxy.latencyMs === "number" && proxy.latencyMs > 0) {
-    parts.push(`${proxy.latencyMs} ms`);
-  }
-  if (!proxy.alive) {
-    parts.push("不可用");
-  }
-  return parts.join(" · ");
-}
-
-function logTone(level: string): string {
-  const normalized = level.toLowerCase();
-  if (normalized.includes("error") || normalized.includes("fatal")) {
-    return "bad";
-  }
-  if (normalized.includes("warn")) {
-    return "warn";
-  }
-  if (normalized.includes("debug") || normalized.includes("trace")) {
-    return "muted";
-  }
-  return "info";
-}
-
 function translateLogLevel(level: string): string {
   const normalized = level.toLowerCase();
   if (normalized.includes("fatal")) {
@@ -975,6 +954,51 @@ function translateLogLevel(level: string): string {
     return "追踪";
   }
   return level || "信息";
+}
+
+function isErrorLevel(level: string): boolean {
+  const normalized = level.toLowerCase();
+  return normalized.includes("error") || normalized.includes("fatal");
+}
+
+function isWarnLevel(level: string): boolean {
+  return level.toLowerCase().includes("warn");
+}
+
+function badgeText(tone: BadgeTone): string {
+  switch (tone) {
+    case "good":
+      return "正常";
+    case "warn":
+      return "注意";
+    case "bad":
+      return "异常";
+    default:
+      return "状态";
+  }
+}
+
+function currentTitle(view: ViewId): string {
+  return navItems.find((item) => item.id === view)?.label || "连接";
+}
+
+function currentDescription(view: ViewId): string {
+  switch (view) {
+    case "connection":
+      return "先确认能不能代理，再处理其他事情";
+    case "subscription":
+      return "加载订阅并生成 Mihomo 配置";
+    case "nodes":
+      return "检查节点是否可用";
+    case "groups":
+      return "按代理组选择出口节点";
+    case "auto":
+      return "用延迟和失败率选择更稳定的节点";
+    case "diagnostics":
+      return "连接失败时从这里定位问题";
+    default:
+      return "";
+  }
 }
 
 function normalizeAppStatus(status: AppStatus | null | undefined): AppStatus {
