@@ -130,7 +130,7 @@ func TestAutoStableRunnerMethodsAreWired(t *testing.T) {
 
 func TestRunAutoStableTickCooldownSkipsRunner(t *testing.T) {
 	a := New()
-	completedAt := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
+	completedAt := time.Now()
 	runner := &fakeAutoStableRunner{
 		status: AutoStableStatus{Available: true, Enabled: true, Running: true},
 		tick: AutoStableActionResult{
