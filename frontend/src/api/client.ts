@@ -1,6 +1,7 @@
 export type AppStatus = {
   coreRunning: boolean;
   systemProxyEnabled: boolean;
+  autoStableEnabled: boolean;
   activeProfileName: string;
   controllerAddress: string;
   lastError?: string;
@@ -26,6 +27,48 @@ export type LogLine = {
   message: string;
 };
 
+export type AutoStableNodeHealth = {
+  name: string;
+  type?: string;
+  latencyMs?: number;
+  alive: boolean;
+  score?: number;
+  successCount?: number;
+  failureCount?: number;
+  totalChecks?: number;
+  failureRate?: number;
+  lastCheckedAt?: string;
+  cooldownUntil?: string;
+};
+
+export type AutoStableGroupHealth = {
+  name: string;
+  type: string;
+  selected?: string;
+  proxies: AutoStableNodeHealth[];
+};
+
+export type AutoStableStatus = {
+  enabled: boolean;
+  available: boolean;
+  running: boolean;
+  lastTickAt?: string;
+  lastAction?: string;
+  lastSelected?: string;
+  lastError?: string;
+  health: AutoStableGroupHealth[];
+};
+
+export type AutoStableActionResult = {
+  action: string;
+  groupName?: string;
+  selected?: string;
+  changed: boolean;
+  message?: string;
+  completedAt: string;
+  health?: AutoStableGroupHealth[];
+};
+
 type WailsApp = {
   GetAppStatus(): Promise<AppStatus>;
   StartCore(): Promise<void>;
@@ -36,6 +79,10 @@ type WailsApp = {
   GetProxyGroups(): Promise<ProxyGroupView[]>;
   SelectProxy(groupName: string, proxyName: string): Promise<void>;
   GetLogs(limit: number): Promise<LogLine[]>;
+  GetAutoStableStatus(): Promise<AutoStableStatus>;
+  SetAutoStableEnabled(enabled: boolean): Promise<void>;
+  RunAutoStableTick(): Promise<AutoStableActionResult>;
+  SelectAutoStableProxy(groupName: string): Promise<AutoStableActionResult>;
 };
 
 declare global {
@@ -92,3 +139,18 @@ export async function getLogs(limit = 100): Promise<LogLine[]> {
   return app().GetLogs(limit);
 }
 
+export async function getAutoStableStatus(): Promise<AutoStableStatus> {
+  return app().GetAutoStableStatus();
+}
+
+export async function setAutoStableEnabled(enabled: boolean): Promise<void> {
+  return app().SetAutoStableEnabled(enabled);
+}
+
+export async function runAutoStableTick(): Promise<AutoStableActionResult> {
+  return app().RunAutoStableTick();
+}
+
+export async function selectAutoStableProxy(groupName: string): Promise<AutoStableActionResult> {
+  return app().SelectAutoStableProxy(groupName);
+}

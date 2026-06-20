@@ -17,7 +17,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -49,6 +50,15 @@ input {
   padding: 0 12px;
   color: #172026;
   background: #ffffff;
+}
+
+select {
+  min-height: 36px;
+  border: 1px solid #c5ced3;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #172026;
+  padding: 0 34px 0 10px;
 }
 
 .app-shell {
@@ -128,12 +138,18 @@ input {
 }
 
 .topbar,
-.panel-header,
 .group-title,
 .switch-row,
 .log-line {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.panel-header {
+  display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
 }
@@ -152,7 +168,8 @@ input {
 }
 
 .toolbar,
-.subscription-form {
+.subscription-form,
+.health-actions {
   display: flex;
   gap: 8px;
 }
@@ -238,6 +255,57 @@ input {
 .switch-row input {
   width: 18px;
   min-height: 18px;
+}
+
+.health-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.health-actions select {
+  max-width: 180px;
+}
+
+.health-table {
+  display: grid;
+  border: 1px solid #edf1f3;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.health-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) 90px 100px 88px;
+  gap: 12px;
+  align-items: center;
+  min-height: 42px;
+  border-bottom: 1px solid #edf1f3;
+  padding: 8px 10px;
+}
+
+.health-row:last-child {
+  border-bottom: 0;
+}
+
+.health-head {
+  min-height: 34px;
+  background: #f8fbfb;
+  color: #667982;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.health-row strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #255f5c;
+  font-size: 13px;
+}
+
+.health-row span {
+  min-width: 0;
 }
 
 .connection-copy {
@@ -353,9 +421,25 @@ input {
   }
 
   .toolbar,
-  .subscription-form {
+  .subscription-form,
+  .health-actions {
     width: 100%;
     flex-direction: column;
+  }
+
+  .panel-header {
+    display: grid;
+  }
+
+  .health-actions select {
+    max-width: none;
+    width: 100%;
+  }
+
+  .health-row {
+    grid-template-columns: minmax(110px, 1fr) 64px 78px 64px;
+    gap: 8px;
+    font-size: 12px;
   }
 
   .group-title {
