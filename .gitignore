@@ -1,7 +1,8 @@
 # Build output
 /build/bin/
 /dist/
-/frontend/dist/
+/frontend/dist/*
+!/frontend/dist/.gitkeep
 
 # Runtime data
 /data/
@@ -20,4 +21,3 @@
 /.vscode/
 *.swp
 *.tmp
-
