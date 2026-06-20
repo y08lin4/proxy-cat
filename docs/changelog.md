@@ -54,3 +54,38 @@
 
 - Go 后端、配置生成、控制面板和 Wails 壳已具备 MVP 形态
 - 真实“能访问网页”验收待 Mihomo 二进制和本地运行环境补齐后执行
+
+## Phase 2 - 自动选节点增强
+
+日期：2026-06-20
+
+变更：
+
+- 新增 `AUTO-STABLE` 默认代理组，内部类型为 `auto-stable`
+- Mihomo YAML 中将 `auto-stable` 映射为原生 `select` 组，由 Proxy-Cat 控制选择
+- 新增 Mihomo `/proxies/{name}/delay` 延迟检测接口
+- 新增 `internal/autostable` 纯策略包
+- 实现健康样本缓存，默认窗口 10 次
+- 实现冻结评分规则：`score = latency + failure_rate * 1000`
+- 实现抖动控制：默认 `switch_threshold = 100`、`min_hold_time = 60s`
+- 实现失败冷却：默认 `cooldown_after_failure = 60s`
+- 实现连续失败 fallback：默认连续失败 2 次允许绕过保持时间与阈值
+- Wails 后端新增 auto-stable 状态、开关、手动 tick 和选择动作
+- React 控制面板新增 auto-stable 开关、健康表、手动刷新和 tick 控件
+
+验证：
+
+- `go test -count=1 ./...` 通过
+- `tsc --noEmit` 通过
+- `vite build` 通过
+
+已知限制：
+
+- 本机仍未检测到全局 `mihomo` 和 `wails` CLI，无法完成真实桌面端代理链路验收
+- Phase 2 使用可控 tick，不引入复杂后台调度系统
+- 真实健康检测依赖 Mihomo external-controller 运行
+
+验收状态：
+
+- auto-stable 策略、缓存、冷却、fallback 与 UI 已完成代码级闭环
+- 真实网络环境下的自动切换需要在提供 `mihomo.exe` 后进行端到端验证
