@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+/* Proxy-Cat design tokens — warm clay/peach palette */
+@theme {
+  --color-brand-50: #fff8f4;
+  --color-brand-100: #fff4ef;
+  --color-brand-200: #ffe4dc;
+  --color-brand-300: #f3a793;
+  --color-brand-400: #dc7f69;
+  --color-brand-500: #cd705d;
+  --color-brand-600: #a85;
+  --color-brand-700: #7a665f;
+  --color-brand-800: #68534d;
+  --color-brand-900: #2d2927;
+  --color-surface: #fffaf7;
+  --color-bg: #f8f0ec;
+  --color-good: #dff1df;
+  --color-good-text: #3d7145;
+  --color-warn: #fff0d9;
+  --color-error: #ffe7df;
+  --color-error-text: #8f321f;
+}
+
+/* Base */
+body {
+  margin: 0;
+  background-color: #f8f0ec;
+  background-image: radial-gradient(circle at 18% 4%, rgb(255 222 213 / 0.76), transparent 34%);
+  color: #2d2927;
+  font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background-color: #1a1513;
+    background-image: radial-gradient(circle at 18% 4%, rgb(80 50 40 / 0.76), transparent 34%);
+    color: #e8e0dc;
+  }
+}

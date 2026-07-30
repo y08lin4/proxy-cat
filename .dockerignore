@@ -1,0 +1,7 @@
+node_modules
+.git
+*.exe
+*.zip
+data/
+logs/
+frontend/dist/

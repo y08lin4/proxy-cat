@@ -1,6 +1,7 @@
 # Build output
 /build/
 /dist/
+/proxy-cat.exe
 /frontend/dist/*
 !/frontend/dist/.gitkeep
 
@@ -17,6 +18,7 @@
 /coverage.out
 
 # Node
+/node_modules/
 /frontend/node_modules/
 /frontend/.vite/
 

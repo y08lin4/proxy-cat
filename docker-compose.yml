@@ -1,0 +1,18 @@
+version: "3.9"
+
+services:
+  proxy-cat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: proxy-cat
+    ports:
+      - "8080:8080"
+    volumes:
+      - proxcat-data:/root/.config/Proxy-Cat
+      - ./mihomo:/usr/local/bin/mihomo:ro
+    restart: unless-stopped
+    network_mode: bridge
+
+volumes:
+  proxcat-data:
