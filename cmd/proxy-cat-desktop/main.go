@@ -7,8 +7,8 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"syscall"
 	"time"
@@ -18,6 +18,31 @@ import (
 
 func main() {
 	svc := service.New(service.Config{})
+
+	// Detect frontend assets directory
+	fd := ""
+	for _, dir := range []string{"./frontend/dist", "./dist/frontend", "frontend/dist", "./frontend"} {
+		if _, err := os.Stat(dir + "/index.html"); err == nil {
+			fd = dir
+			break
+		}
+	}
+	// Also check relative to executable
+	if exe, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exe)
+		for _, rel := range []string{"frontend/dist", "frontend"} {
+			dir := filepath.Join(exeDir, rel)
+			if _, err := os.Stat(dir + "/index.html"); err == nil {
+				fd = dir
+				break
+			}
+		}
+	}
+	if fd != "" {
+		service.SetFrontendDir(fd)
+		log.Printf("Serving frontend from %s", fd)
+	}
+
 	router := svc.Router()
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
