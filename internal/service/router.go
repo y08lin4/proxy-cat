@@ -51,6 +51,24 @@ func (s *Service) Router() http.Handler {
 	mux.HandleFunc("GET /api/v1/route-trace", s.handleGetRouteTrace)
 	mux.HandleFunc("GET /api/v1/dialer-status", s.handleGetDialerStatus)
 
+	// Rule templates
+	mux.HandleFunc("GET /api/v1/rule-templates", s.handleGetTemplates)
+	mux.HandleFunc("POST /api/v1/rule-templates/{id}/apply", s.handleApplyTemplate)
+
+	// Rule management
+	mux.HandleFunc("GET /api/v1/rules", s.handleGetRules)
+	mux.HandleFunc("POST /api/v1/rules", s.handleCreateRule)
+	mux.HandleFunc("PUT /api/v1/rules/{id}", s.handleUpdateRule)
+	mux.HandleFunc("DELETE /api/v1/rules/{id}", s.handleDeleteRule)
+	mux.HandleFunc("POST /api/v1/rules/reorder", s.handleReorderRules)
+	mux.HandleFunc("GET /api/v1/rules/validate", s.handleValidateRules)
+
+	// Profile persistence
+	mux.HandleFunc("GET /api/v1/profiles", s.handleListProfiles)
+	mux.HandleFunc("POST /api/v1/profiles/save", s.handleSaveProfile)
+	mux.HandleFunc("POST /api/v1/profiles/{id}/load", s.handleLoadProfile)
+	mux.HandleFunc("DELETE /api/v1/profiles/{id}", s.handleDeleteProfile)
+
 	// Matrix
 	mux.HandleFunc("POST /api/v1/matrix/generate", s.handleGenerateMatrix)
 	mux.HandleFunc("POST /api/v1/matrix/apply", s.handleApplyMatrix)

@@ -112,4 +112,50 @@ export interface AutoStableActionResult {
 
 // ---------------------------------- View state ----------------------------------
 
-export type ViewId = "overview" | "proxies" | "auto" | "matrix" | "logs" | "settings";
+export type ViewId = "overview" | "proxies" | "nodes" | "auto" | "matrix" | "rules" | "logs" | "settings";
+
+// Rule types
+export interface Rule {
+  id?: string;
+  type: string;
+  value?: string;
+  targetGroup?: string;
+  priority: number;
+  enabled: boolean;
+  description?: string;
+  category?: string;
+  tag?: string;
+  templateId?: string;
+  subRules?: Rule[];
+  inlineRule?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface RuleTemplate {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  icon: string;
+  rules: Rule[];
+}
+
+export interface RuleValidationError {
+  ruleId: string;
+  field: string;
+  message: string;
+}
+
+export interface ProfileMeta {
+  id: string;
+  name: string;
+  updatedAt: string;
+  proxyCount: number;
+}
+
+// Chain proxy
+export interface ChainProxyHop {
+  proxyName: string;
+  dialerProxy?: string;
+}

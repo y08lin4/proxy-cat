@@ -1,7 +1,10 @@
 package configgen
 
 import (
+	"fmt"
+
 	"github.com/y08lin4/proxy-cat/internal/domain/proxy"
+	"github.com/y08lin4/proxy-cat/internal/domain/ruleengine"
 	"gopkg.in/yaml.v3"
 )
 
@@ -123,14 +126,26 @@ func GenerateMihomoYAML(p proxy.Profile, opts Options) ([]byte, error) {
 	}
 
 	// Build rules
+	engine := ruleengine.New()
 	ruleStrings := make([]string, 0, len(rules))
 	for _, rule := range rules {
-		if rule.Type == "MATCH" {
-			ruleStrings = append(ruleStrings, "MATCH,"+rule.TargetGroup)
-		} else if rule.Value == "" {
-			ruleStrings = append(ruleStrings, rule.Type+","+rule.TargetGroup)
+		if !rule.Enabled && rule.ID != "" {
+			continue
+		}
+		if rule.ID != "" || rule.InlineRule != "" || len(rule.SubRules) > 0 {
+			// New-style rule with engine support
+			lines, err := engine.ToMihomoRule(rule)
+			if err != nil {
+				return nil, fmt.Errorf("rule %s: %w", rule.ID, err)
+			}
+			ruleStrings = append(ruleStrings, lines...)
 		} else {
-			ruleStrings = append(ruleStrings, rule.Type+","+rule.Value+","+rule.TargetGroup)
+			// Old-style rule from subscription parsing
+			if rule.Type == "MATCH" || rule.Value == "" {
+				ruleStrings = append(ruleStrings, rule.Type+","+rule.TargetGroup)
+			} else {
+				ruleStrings = append(ruleStrings, rule.Type+","+rule.Value+","+rule.TargetGroup)
+			}
 		}
 	}
 

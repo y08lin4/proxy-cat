@@ -17,7 +17,9 @@ import (
 
 	"github.com/y08lin4/proxy-cat/internal/autostable"
 	"github.com/y08lin4/proxy-cat/internal/domain/configgen"
+	"github.com/y08lin4/proxy-cat/internal/domain/persistence"
 	"github.com/y08lin4/proxy-cat/internal/domain/proxy"
+	"github.com/y08lin4/proxy-cat/internal/domain/ruleengine"
 	"github.com/y08lin4/proxy-cat/internal/domain/subscription"
 	"github.com/y08lin4/proxy-cat/internal/platform/mihomo"
 	"github.com/y08lin4/proxy-cat/internal/platform/system"
@@ -79,6 +81,8 @@ type Service struct {
 	activeConfig  string
 	autoStable    *autostable.Manager
 	autoStableCfg autostable.Config
+	store         *persistence.Store
+	ruleEngine    *ruleengine.Engine
 
 	// UI state
 	status           AppStatus
@@ -116,7 +120,9 @@ func New(cfg Config) *Service {
 			CooldownAfterFailure: 1 * time.Minute,
 			ConsecutiveFailLimit: 2,
 		},
-		cfg: cfg,
+		store:       persistence.NewStore(cfg.DataDir),
+		ruleEngine:  ruleengine.New(),
+		cfg:         cfg,
 	}
 }
 

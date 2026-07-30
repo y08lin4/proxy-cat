@@ -5,7 +5,11 @@ import type {
   AutoStableStatus,
   ConnectionStatus,
   LogLine,
+  ProfileMeta,
   ProxyGroupView,
+  Rule,
+  RuleTemplate,
+  RuleValidationError,
 } from "../types";
 
 const BASE_URL = "";
@@ -123,4 +127,55 @@ export async function getLogs(limit = 100, level?: string, query?: string): Prom
   if (level) params.set("level", level);
   if (query) params.set("query", query);
   return request<LogLine[]>("GET", `/api/v1/logs?${params.toString()}`);
+}
+
+// Rule management
+export async function getRules(): Promise<Rule[]> {
+  return request<Rule[]>("GET", "/api/v1/rules");
+}
+
+export async function createRule(rule: Partial<Rule>): Promise<Rule> {
+  return request<Rule>("POST", "/api/v1/rules", rule);
+}
+
+export async function updateRule(id: string, rule: Partial<Rule>): Promise<Rule> {
+  return request<Rule>("PUT", `/api/v1/rules/${encodeURIComponent(id)}`, rule);
+}
+
+export async function deleteRule(id: string): Promise<void> {
+  return request<void>("DELETE", `/api/v1/rules/${encodeURIComponent(id)}`);
+}
+
+export async function reorderRules(ruleIds: string[]): Promise<Rule[]> {
+  return request<Rule[]>("POST", "/api/v1/rules/reorder", { ruleIds });
+}
+
+export async function validateRules(): Promise<RuleValidationError[]> {
+  return request<RuleValidationError[]>("GET", "/api/v1/rules/validate");
+}
+
+// Rule templates
+export async function getRuleTemplates(): Promise<RuleTemplate[]> {
+  return request<RuleTemplate[]>("GET", "/api/v1/rule-templates");
+}
+
+export async function applyRuleTemplate(templateId: string, targetGroup?: string): Promise<Rule[]> {
+  return request<Rule[]>("POST", `/api/v1/rule-templates/${encodeURIComponent(templateId)}/apply`, { targetGroup });
+}
+
+// Profile persistence
+export async function listProfiles(): Promise<ProfileMeta[]> {
+  return request<ProfileMeta[]>("GET", "/api/v1/profiles");
+}
+
+export async function saveProfile(): Promise<void> {
+  return request<void>("POST", "/api/v1/profiles/save");
+}
+
+export async function loadProfile(id: string): Promise<void> {
+  return request<void>("POST", `/api/v1/profiles/${encodeURIComponent(id)}/load`);
+}
+
+export async function deleteProfile(id: string): Promise<void> {
+  return request<void>("DELETE", `/api/v1/profiles/${encodeURIComponent(id)}`);
 }

@@ -9,50 +9,72 @@ import (
 
 // Profile is Proxy-Cat's minimal Phase 1 intermediate model.
 type Profile struct {
-	ID            string
-	Name          string
-	Subscriptions []Subscription
-	Proxies       []ProxyNode
-	ProxyGroups   []ProxyGroup
-	Rules         []Rule
-	Settings      Settings
+	ID            string         `json:"id,omitempty"`
+	Name          string         `json:"name"`
+	Subscriptions []Subscription `json:"subscriptions,omitempty"`
+	Proxies       []ProxyNode    `json:"proxies"`
+	ProxyGroups   []ProxyGroup   `json:"proxyGroups"`
+	Rules         []Rule         `json:"rules"`
+	Settings      Settings       `json:"settings"`
 }
 
 type Subscription struct {
-	ID        string
-	Name      string
-	URL       string
-	UpdatedAt time.Time
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	URL       string    `json:"url"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 type ProxyNode struct {
-	ID         string
-	Name       string
-	Type       string
-	Server     string
-	Port       int
-	RawOptions map[string]any
+	ID         string         `json:"id"`
+	Name       string         `json:"name"`
+	Type       string         `json:"type"`
+	Server     string         `json:"server"`
+	Port       int            `json:"port"`
+	RawOptions map[string]any `json:"rawOptions,omitempty"`
 }
 
 type ProxyGroup struct {
-	Name          string
-	Type          string
-	Proxies       []string
-	SelectedProxy string
-	TestURL       string // per-group health check URL (overrides global default)
+	Name          string          `json:"name"`
+	Type          string          `json:"type"`
+	Proxies       []string        `json:"proxies"`
+	SelectedProxy string          `json:"selectedProxy"`
+	TestURL       string          `json:"testUrl,omitempty"`
+	Interval      int             `json:"interval,omitempty"`
+	Tolerance     int             `json:"tolerance,omitempty"`
+	Lazy          bool            `json:"lazy,omitempty"`
+	Strategy      string          `json:"strategy,omitempty"`
+	StickyMaxAge  int             `json:"stickyMaxAge,omitempty"`
+	ChainNodes    []ChainProxyHop `json:"chainNodes,omitempty"`
+}
+
+type ChainProxyHop struct {
+	ProxyName   string `json:"proxyName"`
+	DialerProxy string `json:"dialerProxy,omitempty"`
 }
 
 type Rule struct {
-	Type        string
-	Value       string
-	TargetGroup string
+	Type        string    `json:"type"`
+	Value       string    `json:"value,omitempty"`
+	TargetGroup string    `json:"targetGroup"`
+	ID          string    `json:"id"`
+	Priority    int       `json:"priority"`
+	Enabled     bool      `json:"enabled"`
+	Description string    `json:"description,omitempty"`
+	Category    string    `json:"category,omitempty"`
+	Tag         string    `json:"tag,omitempty"`
+	TemplateID  string    `json:"templateId,omitempty"`
+	SubRules    []Rule    `json:"subRules,omitempty"`
+	InlineRule  string    `json:"inlineRule,omitempty"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
 type Settings struct {
-	MixedPort          int
-	AllowLAN           bool
-	ExternalController string
-	Secret             string
+	MixedPort          int    `json:"mixedPort"`
+	AllowLAN           bool   `json:"allowLan"`
+	ExternalController string `json:"externalController,omitempty"`
+	Secret             string `json:"secret,omitempty"`
 }
 
 func (p Profile) Validate() error {
@@ -137,7 +159,7 @@ func DefaultRules(targetGroup string) []Rule {
 		targetGroup = "PROXY"
 	}
 	return []Rule{
-		{Type: "GEOIP", Value: "CN", TargetGroup: "DIRECT"},
-		{Type: "MATCH", TargetGroup: targetGroup},
+		{Type: "GEOIP", Value: "CN", TargetGroup: "DIRECT", Enabled: true},
+		{Type: "MATCH", TargetGroup: targetGroup, Enabled: true},
 	}
 }
