@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: latest
+          version: 11
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -40,7 +40,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: latest
+          version: 11
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -64,7 +64,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: latest
+          version: 11
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -93,7 +93,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: latest
+          version: 11
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -116,16 +116,12 @@ jobs:
 
   # Job 6: Build Docker image
   build-docker:
-    needs: [test, frontend]
+    needs: [test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t proxy-cat:latest .
-      - run: mkdir -p dist && docker save proxy-cat:latest | gzip > dist/proxy-cat-docker.tar.gz
-      - uses: actions/upload-artifact@v4
-        with:
-          name: proxy-cat-docker
-          path: dist/proxy-cat-docker.tar.gz
+      - name: Build Docker image
+        run: docker build -t proxy-cat:latest .
 
   # Job 7: Build Android binary
   build-android:
@@ -135,7 +131,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: latest
+          version: 11
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

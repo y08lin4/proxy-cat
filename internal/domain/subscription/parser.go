@@ -42,6 +42,12 @@ func ParseSubscription(data []byte, opts ParseOptions) (proxy.Profile, error) {
 		}
 	}
 	if len(proxies) == 0 {
+		uriProxies, uriErr := ParseURIList(data)
+		if uriErr == nil && len(uriProxies) > 0 {
+			proxies = uriProxies
+		}
+	}
+	if len(proxies) == 0 {
 		return proxy.Profile{}, errors.New("subscription contains no supported proxies")
 	}
 	settings := parseClashSettings(lines)

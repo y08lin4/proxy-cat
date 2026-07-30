@@ -35,6 +35,9 @@ func (s *Service) Router() http.Handler {
 	// Subscription
 	mux.HandleFunc("POST /api/v1/subscription", s.handleLoadSubscription)
 
+	// Protocols
+	mux.HandleFunc("GET /api/v1/protocols", s.handleGetProtocols)
+
 	// Proxy groups
 	mux.HandleFunc("GET /api/v1/proxy-groups", s.handleGetProxyGroups)
 	mux.HandleFunc("POST /api/v1/proxy-groups", s.handleCreateGroup)

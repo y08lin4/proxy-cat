@@ -18,6 +18,7 @@ import (
 	"github.com/y08lin4/proxy-cat/internal/autostable"
 	"github.com/y08lin4/proxy-cat/internal/domain/configgen"
 	"github.com/y08lin4/proxy-cat/internal/domain/persistence"
+	"github.com/y08lin4/proxy-cat/internal/domain/protocol"
 	"github.com/y08lin4/proxy-cat/internal/domain/proxy"
 	"github.com/y08lin4/proxy-cat/internal/domain/ruleengine"
 	"github.com/y08lin4/proxy-cat/internal/domain/subscription"
@@ -77,12 +78,13 @@ type Service struct {
 	httpClient  *http.Client
 
 	// Domain state
-	active        proxy.Profile
-	activeConfig  string
-	autoStable    *autostable.Manager
-	autoStableCfg autostable.Config
-	store         *persistence.Store
-	ruleEngine    *ruleengine.Engine
+	active           proxy.Profile
+	activeConfig     string
+	autoStable       *autostable.Manager
+	autoStableCfg    autostable.Config
+	store            *persistence.Store
+	ruleEngine       *ruleengine.Engine
+	protocolRegistry *protocol.Registry
 
 	// UI state
 	status           AppStatus
@@ -120,9 +122,10 @@ func New(cfg Config) *Service {
 			CooldownAfterFailure: 1 * time.Minute,
 			ConsecutiveFailLimit: 2,
 		},
-		store:       persistence.NewStore(cfg.DataDir),
-		ruleEngine:  ruleengine.New(),
-		cfg:         cfg,
+		store:            persistence.NewStore(cfg.DataDir),
+		ruleEngine:       ruleengine.New(),
+		protocolRegistry: protocol.BuildDefaultRegistry(),
+		cfg:              cfg,
 	}
 }
 
@@ -986,4 +989,13 @@ func (s *Service) buildAutoStableHealthFallbackLocked() []AutoStableGroupHealth 
 		views = append(views, view)
 	}
 	return views
+}
+
+// ---------------------------------------------------------------------------
+// Protocol registry
+// ---------------------------------------------------------------------------
+
+func (s *Service) handleGetProtocols(w http.ResponseWriter, r *http.Request) {
+	protocols := s.protocolRegistry.All()
+	writeJSON(w, http.StatusOK, protocols)
 }

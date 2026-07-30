@@ -15,6 +15,7 @@ import { ProxyViewPanel } from "./components/ProxyView";
 import { AutoStableView } from "./components/AutoStableView";
 import { LogsView } from "./components/LogsView";
 import { SettingsView } from "./components/SettingsView";
+import { NodeManagementView } from "./components/NodeManagementView";
 import { ContextPanel } from "./components/ContextPanel";
 import { MatrixView } from "./components/MatrixView";
 import { RuleEditorView } from "./components/RuleEditorView";
@@ -23,6 +24,7 @@ import { PolicyView } from "./components/PolicyView";
 const NAV_ITEMS: { id: ViewId; mark: string; label: string }[] = [
   { id: "overview", mark: "览", label: "概览" },
   { id: "proxies", mark: "代", label: "代理" },
+  { id: "nodes", mark: "管", label: "节点" },
   { id: "auto", mark: "稳", label: "自动选择" },
   { id: "matrix", mark: "阵", label: "矩阵" },
   { id: "rules", mark: "策", label: "策略" },
@@ -107,6 +109,7 @@ export default function App() {
           <div className="min-w-0">
             {activeView === "overview" && <OverviewView status={status} connection={connection} groups={groups} logs={logs} health={autoStable.health} />}
             {activeView === "proxies" && <ProxyViewPanel groups={groups} busy={busy} onSelect={(g, p) => run(() => selectProxy(g, p), doRefresh)} />}
+            {activeView === "nodes" && <NodeManagementView groups={groups} busy={busy} />}
             {activeView === "auto" && (
               <AutoStableView autoStable={autoStable} healthBusy={healthBusy}
                 onTick={async () => { setHealthBusy(true); try { await runAutoStableTick(); await doRefresh(); } finally { setHealthBusy(false); }}}
