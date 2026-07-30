@@ -27,3 +27,5 @@
 /.vscode/
 *.swp
 *.tmp
+/proxy-cat-desktop
+/proxy-cat-desktop.exe

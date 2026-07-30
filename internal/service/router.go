@@ -38,12 +38,22 @@ func (s *Service) Router() http.Handler {
 	// Proxy groups
 	mux.HandleFunc("GET /api/v1/proxy-groups", s.handleGetProxyGroups)
 	mux.HandleFunc("PUT /api/v1/proxy-groups/", s.handleSelectProxy)
+	mux.HandleFunc("GET /api/v1/proxy-groups/{name}/test-url", s.handleGetTestURL)
+	mux.HandleFunc("PUT /api/v1/proxy-groups/{name}/test-url", s.handleSetTestURL)
 
 	// Auto-stable
 	mux.HandleFunc("GET /api/v1/autostable/status", s.handleGetAutoStableStatus)
 	mux.HandleFunc("PUT /api/v1/autostable/enabled", s.handleSetAutoStableEnabled)
 	mux.HandleFunc("POST /api/v1/autostable/tick", s.handleRunAutoStableTick)
 	mux.HandleFunc("POST /api/v1/autostable/select", s.handleSelectAutoStableProxy)
+
+	// Route trace
+	mux.HandleFunc("GET /api/v1/route-trace", s.handleGetRouteTrace)
+	mux.HandleFunc("GET /api/v1/dialer-status", s.handleGetDialerStatus)
+
+	// Matrix
+	mux.HandleFunc("POST /api/v1/matrix/generate", s.handleGenerateMatrix)
+	mux.HandleFunc("POST /api/v1/matrix/apply", s.handleApplyMatrix)
 
 	// Logs
 	mux.HandleFunc("GET /api/v1/logs", s.handleGetLogs)
@@ -196,6 +206,48 @@ func (s *Service) handleSelectProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "selected"})
+}
+
+// handleGetTestURL returns the test URL for a proxy group.
+// GET /api/v1/proxy-groups/{name}/test-url
+func (s *Service) handleGetTestURL(w http.ResponseWriter, r *http.Request) {
+	groupName := r.PathValue("name")
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, g := range s.active.ProxyGroups {
+		if g.Name == groupName {
+			writeJSON(w, http.StatusOK, map[string]string{"testUrl": g.TestURL})
+			return
+		}
+	}
+	writeError(w, http.StatusNotFound, "group not found")
+}
+
+// handleSetTestURL sets the test URL for a proxy group.
+// PUT /api/v1/proxy-groups/{name}/test-url
+func (s *Service) handleSetTestURL(w http.ResponseWriter, r *http.Request) {
+	groupName := r.PathValue("name")
+
+	var req struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.active.ProxyGroups {
+		if s.active.ProxyGroups[i].Name == groupName {
+			s.active.ProxyGroups[i].TestURL = req.URL
+			s.appendLogLocked("info", fmt.Sprintf("Group %s test URL set to %s", groupName, req.URL))
+			writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+			return
+		}
+	}
+	writeError(w, http.StatusNotFound, "group not found")
 }
 
 func (s *Service) handleGetAutoStableStatus(w http.ResponseWriter, r *http.Request) {

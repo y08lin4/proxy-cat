@@ -23,6 +23,13 @@ func main() {
 	frontendDir := flag.String("frontend-dir", "", "Path to frontend build directory (enables SPA serving)")
 	flag.Parse()
 
+	// Check for frontend dir from flag first, then env var
+	if *frontendDir == "" {
+		if dir := os.Getenv("FRONTEND_DIR"); dir != "" {
+			*frontendDir = dir
+		}
+	}
+
 	svc := service.New(service.Config{
 		Headless:      *headless,
 		NoSystemProxy: *noSystemProxy,

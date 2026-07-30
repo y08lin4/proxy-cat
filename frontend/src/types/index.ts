@@ -112,4 +112,4 @@ export interface AutoStableActionResult {
 
 // ---------------------------------- View state ----------------------------------
 
-export type ViewId = "overview" | "proxies" | "auto" | "logs" | "settings";
+export type ViewId = "overview" | "proxies" | "auto" | "matrix" | "logs" | "settings";

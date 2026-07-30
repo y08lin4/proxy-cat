@@ -115,6 +115,9 @@ func GenerateMihomoYAML(p proxy.Profile, opts Options) ([]byte, error) {
 		if groupType == "url-test" {
 			mg.URL = "https://www.gstatic.com/generate_204"
 			mg.Interval = 300
+			if g.TestURL != "" {
+				mg.URL = g.TestURL
+			}
 		}
 		mihomoGroups = append(mihomoGroups, mg)
 	}

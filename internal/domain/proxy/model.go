@@ -39,6 +39,7 @@ type ProxyGroup struct {
 	Type          string
 	Proxies       []string
 	SelectedProxy string
+	TestURL       string // per-group health check URL (overrides global default)
 }
 
 type Rule struct {

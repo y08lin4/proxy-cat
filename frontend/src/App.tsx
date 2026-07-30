@@ -16,11 +16,13 @@ import { AutoStableView } from "./components/AutoStableView";
 import { LogsView } from "./components/LogsView";
 import { SettingsView } from "./components/SettingsView";
 import { ContextPanel } from "./components/ContextPanel";
+import { MatrixView } from "./components/MatrixView";
 
 const NAV_ITEMS: { id: ViewId; mark: string; label: string }[] = [
   { id: "overview", mark: "览", label: "概览" },
   { id: "proxies", mark: "代", label: "代理" },
   { id: "auto", mark: "稳", label: "自动选择" },
+  { id: "matrix", mark: "阵", label: "矩阵" },
   { id: "logs", mark: "志", label: "日志" },
   { id: "settings", mark: "设", label: "设置" },
 ];
@@ -108,6 +110,7 @@ export default function App() {
                 onRefresh={async () => { setHealthBusy(true); try { await doRefresh(); } finally { setHealthBusy(false); }}}
               />
             )}
+            {activeView === "matrix" && <MatrixView groups={groups} busy={busy} onSelect={(g, p) => run(() => selectProxy(g, p), doRefresh)} />}
             {activeView === "logs" && <LogsView logs={logs} onClear={() => setLogs([])} />}
             {activeView === "settings" && (
               <SettingsView status={status} subscriptionUrl={subscriptionUrl} busy={busy}

@@ -20,7 +20,6 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . ./
-COPY --from=frontend-builder /src/frontend/dist ./frontend/dist
 
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /proxy-cat ./cmd/proxy-cat
 
@@ -42,4 +41,5 @@ ENTRYPOINT ["./proxy-cat", \
     "--headless", \
     "--no-system-proxy", \
     "--port", "8080", \
+    "--frontend-dir", "/app/frontend/dist", \
     "--mihomo-binary", "/usr/local/bin/mihomo"]
