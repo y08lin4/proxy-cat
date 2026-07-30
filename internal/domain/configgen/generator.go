@@ -37,11 +37,15 @@ type mihomoConfig struct {
 }
 
 type mihomoGroup struct {
-	Name     string   `yaml:"name"`
-	Type     string   `yaml:"type"`
-	URL      string   `yaml:"url,omitempty"`
-	Interval int      `yaml:"interval,omitempty"`
-	Proxies  []string `yaml:"proxies"`
+	Name         string   `yaml:"name"`
+	Type         string   `yaml:"type"`
+	URL          string   `yaml:"url,omitempty"`
+	Interval     int      `yaml:"interval,omitempty"`
+	Proxies      []string `yaml:"proxies"`
+	Tolerance    int      `yaml:"tolerance,omitempty"`
+	Lazy         bool     `yaml:"lazy,omitempty"`
+	Strategy     string   `yaml:"strategy,omitempty"`
+	StickyMaxAge int      `yaml:"sticky-max-age,omitempty"`
 }
 
 type mihomoDNS struct {
@@ -121,6 +125,22 @@ func GenerateMihomoYAML(p proxy.Profile, opts Options) ([]byte, error) {
 			if g.TestURL != "" {
 				mg.URL = g.TestURL
 			}
+		}
+		if groupType == "fallback" {
+			mg.URL = "https://www.gstatic.com/generate_204"
+			mg.Interval = 300
+			mg.Tolerance = g.Tolerance
+			mg.Lazy = g.Lazy
+			if g.TestURL != "" {
+				mg.URL = g.TestURL
+			}
+			if g.Interval > 0 {
+				mg.Interval = g.Interval
+			}
+		}
+		if groupType == "load-balance" {
+			mg.Strategy = g.Strategy
+			mg.StickyMaxAge = g.StickyMaxAge
 		}
 		mihomoGroups = append(mihomoGroups, mg)
 	}

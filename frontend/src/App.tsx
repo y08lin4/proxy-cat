@@ -18,6 +18,7 @@ import { SettingsView } from "./components/SettingsView";
 import { ContextPanel } from "./components/ContextPanel";
 import { MatrixView } from "./components/MatrixView";
 import { RuleEditorView } from "./components/RuleEditorView";
+import { PolicyView } from "./components/PolicyView";
 
 const NAV_ITEMS: { id: ViewId; mark: string; label: string }[] = [
   { id: "overview", mark: "览", label: "概览" },
@@ -114,6 +115,7 @@ export default function App() {
             )}
             {activeView === "matrix" && <MatrixView groups={groups} busy={busy} onSelect={(g, p) => run(() => selectProxy(g, p), doRefresh)} />}
             {activeView === "rules" && <RuleEditorView groups={groups} busy={busy} />}
+            {activeView === "policy" && <PolicyView groups={groups} busy={busy} />}
             {activeView === "logs" && <LogsView logs={logs} onClear={() => setLogs([])} />}
             {activeView === "settings" && (
               <SettingsView status={status} subscriptionUrl={subscriptionUrl} busy={busy}

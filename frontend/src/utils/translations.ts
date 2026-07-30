@@ -5,6 +5,7 @@ export function translateGroupType(type: string): string {
     case "fallback": return "故障转移";
     case "auto-stable": return "自动稳定";
     case "load-balance": return "负载均衡";
+    case "relay": return "链式代理";
     default: return type || "未知";
   }
 }

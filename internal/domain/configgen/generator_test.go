@@ -289,3 +289,115 @@ func TestGenerateMihomoYAMLCustomDNS(t *testing.T) {
 		t.Errorf("expected dns.nameserver [8.8.8.8, 8.8.4.4], got %v", cfg.DNS.NameServer)
 	}
 }
+
+func TestGenerateMihomoYAMLFallbackGroup(t *testing.T) {
+	p := proxy.Profile{
+		Name: "Main",
+		Proxies: []proxy.ProxyNode{{
+			Name:   "HK",
+			Type:   "ss",
+			Server: "hk.example.com",
+			Port:   8388,
+		}},
+		ProxyGroups: []proxy.ProxyGroup{{
+			Name:      "FALLBACK-GROUP",
+			Type:      "fallback",
+			Proxies:   []string{"HK"},
+			TestURL:   "https://cp.cloudflare.com/generate_204",
+			Interval:  600,
+			Tolerance: 150,
+			Lazy:      true,
+		}},
+	}
+	got, err := GenerateMihomoYAML(p, Options{})
+	if err != nil {
+		t.Fatalf("GenerateMihomoYAML() error = %v", err)
+	}
+
+	var cfg parsedConfig
+	if err := yaml.Unmarshal(got, &cfg); err != nil {
+		t.Fatalf("failed to unmarshal generated YAML: %v\nfull YAML:\n%s", err, string(got))
+	}
+
+	if len(cfg.ProxyGroups) != 1 {
+		t.Fatalf("expected 1 proxy group, got %d", len(cfg.ProxyGroups))
+	}
+	g := cfg.ProxyGroups[0]
+	if g.Name != "FALLBACK-GROUP" {
+		t.Errorf("expected name 'FALLBACK-GROUP', got %q", g.Name)
+	}
+	if g.Type != "fallback" {
+		t.Errorf("expected type 'fallback', got %q", g.Type)
+	}
+	if g.URL != "https://cp.cloudflare.com/generate_204" {
+		t.Errorf("expected URL 'https://cp.cloudflare.com/generate_204', got %q", g.URL)
+	}
+	if g.Interval != 600 {
+		t.Errorf("expected interval 600, got %d", g.Interval)
+	}
+	if g.Tolerance != 150 {
+		t.Errorf("expected tolerance 150, got %d", g.Tolerance)
+	}
+	if g.Lazy != true {
+		t.Errorf("expected lazy true, got %v", g.Lazy)
+	}
+}
+
+func TestGenerateMihomoYAMLLoadBalanceGroup(t *testing.T) {
+	p := proxy.Profile{
+		Name: "Main",
+		Proxies: []proxy.ProxyNode{
+			{
+				Name:   "HK",
+				Type:   "ss",
+				Server: "hk.example.com",
+				Port:   8388,
+			},
+			{
+				Name:   "US",
+				Type:   "vmess",
+				Server: "us.example.com",
+				Port:   443,
+			},
+		},
+		ProxyGroups: []proxy.ProxyGroup{{
+			Name:         "LB-GROUP",
+			Type:         "load-balance",
+			Proxies:      []string{"HK", "US"},
+			Strategy:     "round-robin",
+			StickyMaxAge: 1800,
+		}},
+	}
+	got, err := GenerateMihomoYAML(p, Options{})
+	if err != nil {
+		t.Fatalf("GenerateMihomoYAML() error = %v", err)
+	}
+
+	var cfg parsedConfig
+	if err := yaml.Unmarshal(got, &cfg); err != nil {
+		t.Fatalf("failed to unmarshal generated YAML: %v\nfull YAML:\n%s", err, string(got))
+	}
+
+	if len(cfg.ProxyGroups) != 1 {
+		t.Fatalf("expected 1 proxy group, got %d", len(cfg.ProxyGroups))
+	}
+	g := cfg.ProxyGroups[0]
+	if g.Name != "LB-GROUP" {
+		t.Errorf("expected name 'LB-GROUP', got %q", g.Name)
+	}
+	if g.Type != "load-balance" {
+		t.Errorf("expected type 'load-balance', got %q", g.Type)
+	}
+	if g.Strategy != "round-robin" {
+		t.Errorf("expected strategy 'round-robin', got %q", g.Strategy)
+	}
+	if g.StickyMaxAge != 1800 {
+		t.Errorf("expected sticky-max-age 1800, got %d", g.StickyMaxAge)
+	}
+	if g.URL != "" {
+		t.Errorf("expected no URL for load-balance, got %q", g.URL)
+	}
+	if g.Interval != 0 {
+		t.Errorf("expected no interval for load-balance, got %d", g.Interval)
+	}
+}

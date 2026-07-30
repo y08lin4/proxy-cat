@@ -53,6 +53,14 @@ export interface ProxyGroupView {
   type: string;
   selected: string;
   proxies: ProxyView[];
+  // Extended fields for policy groups
+  interval?: number;
+  tolerance?: number;
+  lazy?: boolean;
+  strategy?: string;
+  stickyMaxAge?: number;
+  testUrl?: string;
+  chainNodes?: ChainProxyHop[];
 }
 
 export interface ProxyView {
@@ -112,7 +120,7 @@ export interface AutoStableActionResult {
 
 // ---------------------------------- View state ----------------------------------
 
-export type ViewId = "overview" | "proxies" | "nodes" | "auto" | "matrix" | "rules" | "logs" | "settings";
+export type ViewId = "overview" | "proxies" | "nodes" | "auto" | "matrix" | "rules" | "policy" | "logs" | "settings";
 
 // Rule types
 export interface Rule {

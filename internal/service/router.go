@@ -37,7 +37,10 @@ func (s *Service) Router() http.Handler {
 
 	// Proxy groups
 	mux.HandleFunc("GET /api/v1/proxy-groups", s.handleGetProxyGroups)
-	mux.HandleFunc("PUT /api/v1/proxy-groups/", s.handleSelectProxy)
+	mux.HandleFunc("POST /api/v1/proxy-groups", s.handleCreateGroup)
+	mux.HandleFunc("PUT /api/v1/proxy-groups/{name}", s.handleUpdateGroup)
+	mux.HandleFunc("DELETE /api/v1/proxy-groups/{name}", s.handleDeleteGroup)
+	mux.HandleFunc("PUT /api/v1/proxy-groups/{name}/select", s.handleSelectProxy)
 	mux.HandleFunc("GET /api/v1/proxy-groups/{name}/test-url", s.handleGetTestURL)
 	mux.HandleFunc("PUT /api/v1/proxy-groups/{name}/test-url", s.handleSetTestURL)
 
@@ -208,9 +211,7 @@ func (s *Service) handleGetProxyGroups(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handleSelectProxy(w http.ResponseWriter, r *http.Request) {
-	// Path: /api/v1/proxy-groups/{groupName}/select
-	groupName := strings.TrimPrefix(r.URL.Path, "/api/v1/proxy-groups/")
-	groupName = strings.TrimSuffix(groupName, "/select")
+	groupName := r.PathValue("name")
 
 	var req struct {
 		ProxyName string `json:"proxyName"`
