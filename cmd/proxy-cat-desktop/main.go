@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"os/exec"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -16,8 +18,8 @@ import (
 
 func main() {
 	svc := service.New(service.Config{})
+	router := svc.Router()
 
-	// Find a free port
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		log.Fatalf("Failed to find free port: %v", err)
@@ -25,9 +27,7 @@ func main() {
 	port := listener.Addr().(*net.TCPAddr).Port
 	listener.Close()
 
-	router := svc.Router()
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
-
 	srv := &http.Server{
 		Addr:         addr,
 		Handler:      router,
@@ -37,13 +37,11 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("Opening %s in browser...", addr)
-		if err := openBrowser("http://" + addr); err != nil {
-			log.Printf("Failed to open browser: %v", err)
-		}
+		url := "http://" + addr
+		log.Printf("Opening %s", url)
+		openNativeWindow(url)
 	}()
 
-	// Graceful shutdown
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -55,8 +53,41 @@ func main() {
 		srv.Shutdown(ctx)
 	}()
 
-	log.Printf("Proxy-Cat desktop server listening on %s", addr)
+	log.Printf("Proxy-Cat desktop server on %s", addr)
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		log.Fatalf("Server error: %v", err)
+	}
+}
+
+func openNativeWindow(url string) {
+	switch runtime.GOOS {
+	case "windows":
+		// Edge WebView2 --app mode = frameless native window
+		edgePaths := []string{
+			os.Getenv("ProgramFiles(x86)") + `\Microsoft\Edge\Application\msedge.exe`,
+			os.Getenv("ProgramFiles") + `\Microsoft\Edge\Application\msedge.exe`,
+			`C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`,
+			`C:\Program Files\Microsoft\Edge\Application\msedge.exe`,
+		}
+		for _, ep := range edgePaths {
+			if _, err := os.Stat(ep); err == nil {
+				cmd := exec.Command(ep,
+					"--app="+url,
+					"--window-size=1160,760",
+					"--disable-extensions",
+					"--disable-sync",
+					"--no-first-run",
+					"--no-default-browser-check",
+				)
+				cmd.Start()
+				return
+			}
+		}
+		// Fallback: open default browser
+		exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+	case "darwin":
+		exec.Command("open", "-a", "Safari", url).Start()
+	default:
+		exec.Command("xdg-open", url).Start()
 	}
 }
