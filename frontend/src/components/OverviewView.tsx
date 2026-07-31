@@ -16,7 +16,7 @@ export function OverviewView({ status, connection, groups, logs }: OverviewViewP
   const selectedNodes = groups.filter(g => g.selected).map(g => `${g.name}：${g.selected}`);
   const healthRows: HealthRow[] = [];
   const summary = summarizeHealth(healthRows);
-  const recentLogs = logs.slice(-5).reverse();
+  const recentLogs = (logs??[]).slice(-5).reverse();
 
   return (
     <div className="flex flex-col gap-4">
@@ -51,7 +51,7 @@ export function OverviewView({ status, connection, groups, logs }: OverviewViewP
         <div className="rounded-3xl bg-[#fffaf7] p-6 shadow-[0_18px_44px_rgb(124_76_62/0.08),inset_0_1px_0_rgb(255_255_255/0.72)]">
           <h3 className="text-lg font-normal text-brand-900 mb-3">当前选择</h3>
           {selectedNodes.length > 0
-            ? <ul className="space-y-1.5 text-sm text-brand-800">{selectedNodes.slice(0, 4).map((n, i) => <li key={i}>{n}</li>)}</ul>
+            ? <ul className="space-y-1.5 text-sm text-brand-800">{(selectedNodes??[]).slice(0, 4).map((n, i) => <li key={i}>{n}</li>)}</ul>
             : <EmptyState message="还没有已选择的代理组" />}
         </div>
         <div className="rounded-3xl bg-[#fffaf7] p-6 shadow-[0_18px_44px_rgb(124_76_62/0.08),inset_0_1px_0_rgb(255_255_255/0.72)]">

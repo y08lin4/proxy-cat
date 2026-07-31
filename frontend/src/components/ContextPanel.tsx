@@ -74,7 +74,7 @@ export function ContextPanel({ status, autoStable, groups, busy, onStart, onStop
       <div className="rounded-3xl bg-[#fffaf7] p-5 shadow-[0_12px_32px_rgb(124_76_62/0.06)]">
         <h3 className="font-bold text-brand-900 mb-3">当前出口</h3>
         {selectedNodes.length > 0
-          ? <ul className="space-y-1.5 text-sm text-brand-800">{selectedNodes.slice(0, 4).map((n, i) => <li key={i}>{n}</li>)}</ul>
+          ? <ul className="space-y-1.5 text-sm text-brand-800">{(selectedNodes??[]).slice(0, 4).map((n, i) => <li key={i}>{n}</li>)}</ul>
           : <div className="text-sm text-brand-400">暂无已选择分组</div>}
       </div>
 

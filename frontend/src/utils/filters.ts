@@ -6,6 +6,7 @@ export interface HealthRow extends AutoStableNodeHealth {
 }
 
 export function flattenHealth(groups: AutoStableGroupHealth[]): HealthRow[] {
+  if (!groups) return [];
   return groups.flatMap(g => g.proxies.map(p => ({ groupName: g.name, groupType: g.type, ...p })));
 }
 
@@ -35,6 +36,7 @@ export function healthScore(row: AutoStableNodeHealth): number {
 }
 
 export function filterGroups(groups: ProxyGroupView[], query: string, view: string): ProxyGroupView[] {
+  if (!groups) return [];
   let filtered = groups;
   if (view === "selected") filtered = filtered.filter(g => g.selected && g.selected !== "");
   if (view === "auto") filtered = filtered.filter(g => g.type === "auto-stable" || g.name.toLowerCase().includes("stable"));
@@ -46,6 +48,7 @@ export function filterGroups(groups: ProxyGroupView[], query: string, view: stri
 }
 
 export function filterLogs(logs: LogLine[], level: string, query: string): LogLine[] {
+  if (!logs) return [];
   let filtered = logs;
   if (level && level !== "all") filtered = filtered.filter(l => l.level === level);
   if (query) {
@@ -56,5 +59,6 @@ export function filterLogs(logs: LogLine[], level: string, query: string): LogLi
 }
 
 export function uniqueLogLevels(logs: LogLine[]): string[] {
+  if (!logs) return [];
   return [...new Set(logs.map(l => l.level))];
 }

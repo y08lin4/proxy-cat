@@ -31,10 +31,10 @@ export function useAppState() {
         getLogs(80),
         getConnectionStatus(),
       ]);
-      setStatus(s);
-      setGroups(g);
-      setLogs(l);
-      setConnection(c);
+      setStatus(s ?? emptyStatus);
+      setGroups(g ?? []);
+      setLogs(l ?? []);
+      setConnection(c ?? emptyConnection);
     } catch (err) {
       throw err;
     }
@@ -43,7 +43,7 @@ export function useAppState() {
   const refreshHealth = useCallback(async () => {
     try {
       const a = await getAutoStableStatus();
-      setAutoStable(a);
+      setAutoStable(a ?? emptyAutoStable);
     } catch { /* health refresh is non-critical */ }
   }, []);
 
